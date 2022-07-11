@@ -4,12 +4,6 @@ library(dplyr)
 library(tidyr)
 library(rstudioapi)
 library(logr)
-library(RSelenium)
-
-#rD <- remoteDriver()
-#remDr <- rD[["client"]]
-#remDr$navigate("")
-#remDr$open()
 
 ### set up environment
 # get the directory this file is stored in
