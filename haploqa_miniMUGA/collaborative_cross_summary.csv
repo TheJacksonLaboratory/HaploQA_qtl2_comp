@@ -1,0 +1,4 @@
+"ID","Secondary IDs","Haplotype Candidate","Strain Name","Strain ID","Sex","Platform","% Het. Calls","% Hom. Calls","% No Call","% Concordance","Sample Filepath"
+"DJN","C57L/J_F003","True","C57L/J",668,"female","MiniMUGA","0.23%","91.19%","8.58%",NA,"https://haploqa.jax.org/sample/6250440a183b6a619c4d181b.html"
+"DKK","ZALENDE/EiJ","True","ZALENDE/EiJ",1392,"female","MiniMUGA","0.37%","99.63%","0.00%",NA,"https://haploqa.jax.org/sample/625044cb183b6a619d4d1824.html"
+"DPG","LG/J","True","LG/J",675,"female","MiniMUGA","0.26%","91.16%","8.58%",NA,"https://haploqa.jax.org/sample/62504604183b6a619d4d184d.html"
