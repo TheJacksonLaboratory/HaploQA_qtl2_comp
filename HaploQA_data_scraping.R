@@ -1,5 +1,3 @@
-library(rvest)
-library(httr)
 library(dplyr)
 library(tidyr)
 library(rstudioapi)
@@ -7,14 +5,18 @@ library(logr)
 
 #### Set toggles
 generate_summary <- TRUE # set to TRUE to generate summary table
-output_summary <- TRUE # set to TRUE to output summary table to data directory
+output_summary <- FALSE # set to TRUE to output summary table to data directory
 generate_sample_individuals <- TRUE # set to TRUE to generate individual sample data
-output_samples <- TRUE # set to TRUE to output sample data to directory
+output_samples <- FALSE # set to TRUE to output sample data to directory
 
 
 #### Environment set-up
 # get the directory this file is stored in
 root <- dirname(getSourceEditorContext()$path)
+
+# source functions used
+source(paste0(root,"/web_scrape_functions.R"))
+
 # data output directory
 data_dir <- file.path(root, 'haploqa_collab_cross') # name of desired output folder
 # create if folder not exist
@@ -32,40 +34,6 @@ haploqa_html <- read_html(sample_url)
 html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
 url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
 
-#### data retrieval functions
-## main summary table
-sample_summary_scrape <- function(html_file, url_list) {
-  # convert into table
-  html_table <- html_file %>% html_nodes(".table") %>% html_table()
-  sum_table <- html_table[[1]][-1] # remove first column, as it's blank
-  sum_table <- as.data.frame(sum_table, row.names = F) # convert into dataframe
-  # clean up ID columns
-  sum_table$`ID (Secondary IDs)` <- gsub("\\s+", "", sum_table$`ID (Secondary IDs)`) # remove spaces
-  # split IDs and secondary IDs
-  sum_table <- sum_table %>%
-    separate(`ID (Secondary IDs)`, c("ID", "Secondary IDs"), "\\(")
-  sum_table$`Secondary IDs` <- gsub("\\)", "", sum_table$`Secondary IDs`) #remove parentheses
-  sum_table$`Sample Filepath` <- url_list
-   
-  return(sum_table)
-}
-
-## individual sample datasets
-sample_individual_scrape <- function(url) {
-  # read html of website with sample data
-  html_sample <- read_html(url)
-  # get class 'btn'
-  sample_list <- html_sample %>% 
-    html_nodes(".btn") %>% html_attr("href")
-  # only retrieving SNP files for now
-  fp <- sample_list[grepl('snp', sample_list)]
-  # full file name to get from website
-  file <- paste0(url_domain, fp)
-  
-  return(file)
-}
-
-
 #### implementations
 # summary table
 if (generate_summary == TRUE) {
@@ -80,10 +48,12 @@ if (generate_summary == TRUE) {
 # individual samples
 inc = 0
 for (url in url_list) {
+  #url <- url_list[1]
   inc = inc + 1 # increment
   if (generate_sample_individuals == TRUE) {
     file <- sample_individual_scrape(url)
     print(paste0('Working on file ', inc, '/66: ', file))
+    sample_df_save <- as.data.frame(content(GET(file)))
     if (output_samples == TRUE) {
       print('Writing to directory')
       file_name <- unlist(strsplit(file, '/'))[5]

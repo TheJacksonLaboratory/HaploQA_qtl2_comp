@@ -1,0 +1,30 @@
+{
+  "description": "HaploQA test data",
+  "crosstype": "test",
+  "sep": ",",
+  "na.strings": ["-", "NA"],
+  "comment.char": "#",
+  "geno": "test_geno.csv",
+  "founder_geno": "test_foundergeno.csv",
+  "gmap": "test_gmap.csv",
+  "pmap": "test_pmap.csv",
+  "pheno": "test_pheno.csv",
+  "covar": "test_covar.csv",
+  "x_chr": "X",
+  "genotypes": {
+    "G": 1,
+    "C": 2,
+    "T": 3,
+    "A": 4
+  },
+  "geno_transposed": true,
+  "founder_geno_transposed": true,
+  "sex": {
+    "covar": "Sex",
+    "F": "female",
+    "M": "male"
+  },
+  "cross_info": {
+    "covar": "ngen"
+  }
+}
