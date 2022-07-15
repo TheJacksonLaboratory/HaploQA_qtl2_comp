@@ -1,6 +1,6 @@
 {
-  "description": "HaploQA test data",
-  "crosstype": "test",
+  "description": "HaploQA data - qtl2 test run",
+  "crosstype": "risib8",
   "sep": ",",
   "na.strings": ["-", "NA"],
   "comment.char": "#",
@@ -12,19 +12,18 @@
   "covar": "test_covar.csv",
   "x_chr": "X",
   "genotypes": {
-    "G": 1,
-    "C": 2,
-    "T": 3,
-    "A": 4
+    "A": 1,
+    "H": 2,
+    "B": 3
   },
   "geno_transposed": true,
   "founder_geno_transposed": true,
   "sex": {
     "covar": "Sex",
-    "F": "female",
-    "M": "male"
+    "female": "female",
+    "male": "male"
   },
   "cross_info": {
-    "covar": "ngen"
+    "file": "test_crossinfo.csv"
   }
 }
