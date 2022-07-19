@@ -12,7 +12,7 @@ library(httr)
 
 # source the function script
 root <- dirname(getSourceEditorContext()$path)
-source(paste0(root,"/web_scrape_functions.R"))
+source(paste0(root,"/input_data_prep_functions.R"))
 
 #### change the below params
 dir_name <- 'haploqa_collab_cross' # enter directory name
@@ -33,9 +33,9 @@ data_dir <- file.path(root, dir_name)
 dir.create(data_dir, showWarnings = FALSE) 
 
 # set main URL domain
-url_domain <- 'https://haploqa.jax.org' 
+url_domain <- 'http://haploqa-dev.jax.org/' 
 # target sample URL
-sample_url <- 'https://haploqa.jax.org/tag/Collaborative%20Cross.html' # change to the URL of sample
+sample_url <- 'http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html' # change to the URL of sample
 
 #### html file prep
 # read html file
@@ -56,25 +56,41 @@ if (generate_summary == TRUE) {
   }
 }
 
+
+### TO-DO: downloads from certain URLs don't always go through. find out why.
+
+skip_urls <- c('http://haploqa-dev.jax.org//sample/5f56294d183b6a06dabbe5ee.html', 
+               'http://haploqa-dev.jax.org//sample/5f562977183b6a06dabbe60c.html',
+               'http://haploqa-dev.jax.org//sample/5f562991183b6a06dabbe61f.html',
+               'http://haploqa-dev.jax.org//sample/569675e485b062edc4efbeab.html',
+               'http://haploqa-dev.jax.org//sample/569675e785b062edc4efbead.html',
+               'http://haploqa-dev.jax.org//sample/569675ee85b062edc4efbeb2.html',
+               'http://haploqa-dev.jax.org//sample/5696761285b062edc4efbecc.html', 
+               'http://haploqa-dev.jax.org//sample/5696759d85b062edc4efbe7d.html',
+               'http://haploqa-dev.jax.org//sample/569675b385b062edc4efbe8b.html',
+               'http://haploqa-dev.jax.org//sample/569675b585b062edc4efbe8d.html')
+
+url_list <- url_list[!url_list %in% skip_urls]
+
+
 # individual samples
 inc = 0
 for (url in url_list) {
-  #url <- url_list[1]
   inc = inc + 1 # increment
   if (generate_sample_individuals == TRUE) {
     file <- sample_individual_scrape(url, url_domain)
-    print(paste0('Working on file ', inc, '/66: ', file))
+    print(paste0('Working on file ', inc, '/', length(url_list), ': ', file))
     sample_df_save <- as.data.frame(content(GET(file)))
     if (output_samples == TRUE) {
       print('Writing to directory')
-      file_name <- unlist(strsplit(file, '/'))[5]
-      GET(file, write_disk(paste0(data_dir, '/', file_name)))
+      file_name <- unlist(strsplit(file, '/'))[6]
+      GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
     }
   }
 }
 
 # for testing - read the summary file if not regenerating above, as it's needed for below
-#sum_df <- fread(paste0(data_dir, '/collaborative_cross_summary.csv'))
+sum_df <- fread(paste0(data_dir, '/collaborative_cross_summary.csv'))
 
 ### Part 2 - convert results to qtl2 input format
 ## create a data directory for qtl2 input data
@@ -84,6 +100,9 @@ dir.create(qtl2_dir, showWarnings = FALSE)
 
 # implement function
 file_output <- get_qtl2_input(dir_name, sample_type, output_dir_name, sum_df)
+
+# order the chromosomes?
+chr_order <- c((0:19),"X","Y")
 
 # unpack
 if (qtl2_file_gen == TRUE) {
@@ -121,7 +140,6 @@ control_file <- '{
   "pmap": "test_pmap.csv",
   "pheno": "test_pheno.csv",
   "covar": "test_covar.csv",
-  "alleles": ["A", "B", "C", "D", "E", "F", "G", "H"],
   "genotypes": {
     "A": 1,
     "H": 2,
@@ -150,4 +168,6 @@ cc_test # print to view read status
 
 pr <- calc_genoprob(cross=cc_test, map=cc_test$gmap, error_prob=0.002)
 names(pr) # should be chromosomes
-plot_genoprob(pr, cc_test$gmap, ind = 1, chr = 19)
+ind = 1
+chr = 1
+plot_genoprob(pr, cc_test$gmap, ind = ind, chr = chr, main = paste0('Genotype Probabilities of individual ', ind, ' at chromosome ', chr))

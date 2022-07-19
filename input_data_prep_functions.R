@@ -41,6 +41,19 @@ sample_summary_scrape <- function(html_file, url_list) {
   return(sum_table)
 }
 
+# files with only one allele
+read_sample_txt <- function(filename) {
+  print(filename)
+  file_df <- fread(filename)
+  if(ncol(file_df) == 9) {
+    df <- file_df
+  } else {
+    df <- NULL # do not output if file is incorrect
+    print(paste0('file with problematic columns:', filename))
+  }
+  return(df)
+}
+
 
 # function to generate and convert files to 1tl2 input format
 get_qtl2_input <- function(dir_name, sample_type, output_dir_name, summary_df){
@@ -67,7 +80,7 @@ get_qtl2_input <- function(dir_name, sample_type, output_dir_name, summary_df){
   #summary_file <- dir(data_dir, pattern = '\\.csv$', full.names = TRUE)
   
   ### combine all files
-  df_all <- rbindlist(lapply(data_files, fread)) # use sample_id or original?
+  df_all <- rbindlist(lapply(data_files, read_sample_txt)) # use sample_id or original?
   
   # summary df
   sum_df <- summary_df %>% 
@@ -83,13 +96,15 @@ get_qtl2_input <- function(dir_name, sample_type, output_dir_name, summary_df){
     mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
     select(sample_id, snp_id, gene_exp) %>% rename(marker = snp_id)
   df_geno <- dcast(geno_sub, marker~sample_id, value.var="gene_exp") # inbred - most are homozygous
+  df_geno[is.na(df_geno)] <- "--"
   # get marker annotations from wisc
   # encode_genome function on geno and founder from qtl2 convert package - args: matrix of genotypes, matrixs of two alleles
   annot_encode_df <- annot_df %>% select(marker, chr, snp) %>%
     separate(snp, c("allele1", "allele2"), sep=cumsum(c(1)))
   # put alleles in order of marker as shown in geno dataframe
-  geno_encode_annot <- merge(df_geno, annot_encode_df, by = 'marker') %>% select(allele1, allele2)
+  geno_encode_annot <- merge(df_geno, annot_encode_df, by = 'marker', all.x = T) %>% select(allele1, allele2)
   geno_encode_annot <- find_unique_geno(geno_encode_annot, na.strings = c('NA', '-', ""))
+  geno_encode_annot[is.na(geno_encode_annot)] <- '-'
   rownames(df_geno) <- df_geno$marker
   df_geno_encoded <- as.data.frame(encode_geno(df_geno[,-1], geno_encode_annot))
   df_geno_encoded$marker <- rownames(df_geno_encoded)
@@ -133,9 +148,7 @@ get_qtl2_input <- function(dir_name, sample_type, output_dir_name, summary_df){
   #summary_df <- fread(summary_file)
   # sample_id, sex
   df_cov_all <- merge(sum_df, df_all %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd), by = 'sample_id')
-  # convert to numerics
-  #df_cov_all$`% Het. Calls` <- as.numeric(gsub("%", "", df_cov_all$`% Het. Calls`))
-  #df_cov_all$`% No Call` <- as.numeric(gsub("%", "", df_cov_all$`% No Call`))
+
   # remove those with overall no calls more than 10%
   df_cov_all <- df_cov_all[!df_cov_all$`% No Call` > 10,] %>% select(sample_id, Sex, chromosome, allele1_fwd, allele2_fwd)
   df_cov_all_xy <- df_cov_all[df_cov_all$chromosome %in% c('X', 'Y'),]
@@ -214,10 +227,12 @@ get_qtl2_input <- function(dir_name, sample_type, output_dir_name, summary_df){
   # join with summary table and CC file in karl's github
   # match the strain names with the cc cross info csv
   ci_temp <- read.csv('https://raw.githubusercontent.com/rqtl/qtl2data/main/CC/cc_crossinfo.csv', skip=3) %>% 
-    separate(id, c("Strain Name", "sec_id"), "/") %>% select(-sec_id)
+    separate(id, c("strain_id", "sec_id"), "/") %>% select(-sec_id)
   ci_sum <- summary_df %>% select(`Strain Name`, `ID`)
-  df_crossinfo <- merge(ci_temp, ci_sum, by = 'Strain Name', all.y = T) %>% 
-    select(-`Strain Name`) %>% select(ID, everything()) %>%
+  ci_sum$strain_id <- str_extract(ci_sum$`Strain Name`, "CC...")
+  ci_sum <- ci_sum %>% select(-`Strain Name`)
+  df_crossinfo <- merge(ci_temp, ci_sum, by = 'strain_id', all.y = T) %>% 
+    select(ID, everything()) %>%
     rename(id = ID) %>% drop_na() # read_cross does not allow NAs here
   file_output[[7]] <- df_crossinfo 
   print('cross info data done')
