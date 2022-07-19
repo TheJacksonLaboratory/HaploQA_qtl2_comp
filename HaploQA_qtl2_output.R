@@ -1,4 +1,4 @@
-##### HaploQA data reformatting script
+##### HaploQA data reformatting - Launch script
 ### used for qtl2 input
 ### annotation config saved in annotations_config.csv
 ### founder strain dictionary saved in founder_strains_table.csv
@@ -9,7 +9,6 @@ library(qtl2)
 library(dplyr)
 library(tidyverse)
 library(httr)
-library(jsonlite)
 
 # source the function script
 root <- dirname(getSourceEditorContext()$path)
@@ -25,7 +24,7 @@ generate_summary <- TRUE # set to TRUE to generate summary table
 output_summary <- TRUE # set to TRUE to output summary table to data directory
 generate_sample_individuals <- TRUE # set to TRUE to generate individual sample data
 output_samples <- TRUE 
-qtl2_file_gen = TRUE
+qtl2_file_gen <- TRUE
 
 
 ### Part 1 - get results from HaploQA
@@ -74,6 +73,8 @@ for (url in url_list) {
   }
 }
 
+# for testing - read the summary file if not regenerating above, as it's needed for below
+#sum_df <- fread(paste0(data_dir, '/collaborative_cross_summary.csv'))
 
 ### Part 2 - convert results to qtl2 input format
 ## create a data directory for qtl2 input data
@@ -99,8 +100,8 @@ if (qtl2_file_gen == TRUE) {
   df_foundergeno <- file_output[[6]]
   write.csv(df_foundergeno, paste0(qtl2_dir, '/test_foundergeno.csv'), row.names = F)
   df_crossinfo <- file_output[[7]]
-  # temporary fix - NA can't be here
-  df_crossinfo <- df_crossinfo %>% select(-ID) %>% unique() %>% drop_na()
+  ### not all strains are here
+  df_crossinfo <- df_crossinfo %>% unique() 
   write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
 }
 
@@ -120,7 +121,7 @@ control_file <- '{
   "pmap": "test_pmap.csv",
   "pheno": "test_pheno.csv",
   "covar": "test_covar.csv",
-  "x_chr": "X",
+  "alleles": ["A", "B", "C", "D", "E", "F", "G", "H"],
   "genotypes": {
     "A": 1,
     "H": 2,
@@ -132,13 +133,21 @@ control_file <- '{
     "covar": "Sex",
     "female": "female",
     "male": "male"
-  },
+  }, 
   "cross_info": {
     "file": "test_crossinfo.csv"
   }
 }'
 
-writeLines(control_file, control_fp)
+# output to file
+if (qtl2_file_gen == TRUE) {
+  writeLines(control_file, control_fp)
+}
 
+### qtl2 test run
 cc_test <- read_cross2(control_fp)
+cc_test # print to view read status
 
+pr <- calc_genoprob(cross=cc_test, map=cc_test$gmap, error_prob=0.002)
+names(pr) # should be chromosomes
+plot_genoprob(pr, cc_test$gmap, ind = 1, chr = 19)

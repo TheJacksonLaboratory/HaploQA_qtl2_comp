@@ -10,7 +10,7 @@
   "pmap": "test_pmap.csv",
   "pheno": "test_pheno.csv",
   "covar": "test_covar.csv",
-  "x_chr": "X",
+  "alleles": ["A", "B", "C", "D", "E", "F", "G", "H"],
   "genotypes": {
     "A": 1,
     "H": 2,
@@ -22,7 +22,7 @@
     "covar": "Sex",
     "female": "female",
     "male": "male"
-  },
+  }, 
   "cross_info": {
     "file": "test_crossinfo.csv"
   }
