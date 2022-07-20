@@ -18,3 +18,7 @@ annotations_config.csv, founder_strains_table.csv - dictionaries used for mappin
 
 # Usage
 The complete pipeline from HaploQA data retrieval to qtl2 computations is in HaploQA_qtl2_output.R, change the toggles on top of the script to select whether to regenerate files and run the entire script.
+
+# To-do:
+1. Make a script directory
+2. Make a results directory
