@@ -3,12 +3,18 @@
 ### annotation config saved in annotations_config.csv
 ### founder strain dictionary saved in founder_strains_table.csv
 
-library(data.table)
 library(rstudioapi)
 library(qtl2)
 library(dplyr)
 library(tidyverse)
 library(httr)
+library(rvest)
+library(data.table)
+library(qtl2convert)
+library(ggrepel)
+library(reshape2)
+library(stats)
+library(ggplot2)
 
 # source the function script
 root <- dirname(getSourceEditorContext()$path)
@@ -17,7 +23,7 @@ source(paste0(root,"/input_data_prep_functions.R"))
 #### change the below params
 dir_name <- 'haploqa_cc_gm' # enter directory name
 sample_type <- 'Collaborative Cross' # Collaborative Cross/MiniMUGA/GigaMUGA
-output_dir_name <- 'cc_qtl2_gm_test'
+output_dir_name <- 'cc_qtl2_gm'
 list_pheno <- c('WBC', 'NEUT')
 
 #### Set toggles
@@ -39,7 +45,7 @@ qtl2_dir <- file.path(root, output_dir_name) # name of desired output folder
 dir.create(qtl2_dir, showWarnings = FALSE)
 
 ## results directory
-results_dir <- file.path(root, 'results_test')
+results_dir <- file.path(root, 'results')
 dir.create(results_dir, showWarnings = FALSE) 
 
 ### control file
@@ -130,8 +136,9 @@ df_gmap <- file_output[[2]]
 df_pmap <- file_output[[3]]
 df_pheno <- file_output[[4]]
 df_covar <- file_output[[5]]
-df_foundergeno <- file_output[[6]]
+df_foundergeno <- file_output[[6]] # with strain id metadata
 df_crossinfo <- file_output[[7]]
+df_crossinfo <- df_crossinfo %>% select(-strain_id) # read_cross only takes 8 columns
 
 if (qtl2_file_gen == TRUE) {
   write.csv(df_geno, paste0(qtl2_dir, '/test_geno.csv'), row.names = F)
@@ -182,17 +189,32 @@ if (qtl2_file_gen == TRUE) {
 }
 
 #### Part 3 - qtl2
+# read data
 cc_test <- read_cross2(control_fp)
 map <- cc_test$gmap 
 
-# calculate probs
+# calculations
 pr <- calc_genoprob(cross=cc_test, map=map, error_prob=0.002)
+ginf <- maxmarg(pr)
+ph_geno <- guess_phase(cc_test, ginf)
+pos <- locate_xo(ginf, map) # locations of crossovers in each individual on each chr
+
 
 # output plots to pdf
-total_ind <- 195
+total_ind <- 192
 num_chr <- c((1:19),"X")
 
+### visualizations
+### to-do: structures of files? and write into a function
+# genowide genotype
+pdf(file = paste0(results_dir, '/test_geno_plots.pdf'))
+for (ind in seq(1:total_ind)) {
+  print(ind)
+  plot_onegeno(ph_geno, map, ind = ind, shift = TRUE, main = paste0('Geno-wide genotypes of individual ', ind))  # one individual's geno_wide genotype
+}
+dev.off()
 
+# genoprob
 pdf(file = paste0(results_dir, '/test_plots.pdf'))
 for (ind in seq(1:total_ind)) {
   print(paste0('individual: ',ind))
@@ -204,17 +226,12 @@ for (ind in seq(1:total_ind)) {
 }
 dev.off()
 
-
-ind <- 1
-chr = 2
-plot_genoprob(pr, cc_test$gmap, ind = ind, chr = chr, main = paste0('Genotype Probabilities of individual ', ind, ' at chromosome ', chr))
-# check homozygosity
-
+### csv files (?)
+# output 
 for (chr in num_chr) {
   print(chr)
   x <- eval(parse(text = deparse(substitute(chr))))
   write.csv(pr[[chr]], paste0(results_dir, '/prob_chr_', x, '.csv'), row.names = F)
 }
 
-### combine guess_phase with plot_onegeno
 

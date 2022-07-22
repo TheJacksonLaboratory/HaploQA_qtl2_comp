@@ -1,33 +1,13 @@
-library(rvest)
-library(httr)
-library(data.table)
-library(qtl2convert)
-library(ggrepel)
-library(dplyr)
-library(tidyverse)
-library(reshape2)
-library(stats)
-library(ggplot2)
-
-# function to scrape individual files from single URL
-### add a small document above each function, argument descriptions (ex. url -> text/str/char, 'url that points to the sample')
-### description for returned item too - ex. dataframe/string/vector? and what it is
-# do this for all functions
-sample_individual_scrape <- function(url, url_domain) {
-  # read html of website with sample data
-  html_sample <- read_html(url)
-  # get class 'btn'
-  sample_list <- html_sample %>% 
-    html_nodes(".btn") %>% html_attr("href")
-  # only retrieving SNP files for now
-  fp <- sample_list[grepl('snp', sample_list)]
-  # full file name to get from website
-  file <- paste0(url_domain, fp)
-  
-  return(file)
-}
-
+# contains all functions necessary to retrieve data from HaploQA and convert into qtl2 input format
+#
+#
+#
 # function to retrieve summary table
+# @param html_file (html_document) - html of main page sample website on HaploQA, output of read_html(url)
+# @param url_list (list) - url to main page of individuals in said sample, bound on summary table as metadata
+#
+# @return sum_table (data.frame) - table as shown on HaploQA sample website
+# columns of sum_table: ID (sample IDs), secondary ID, Haplotype Candidate (T/F), Strain Name, Sex, % Het Calls, % Hom Calls, % No Call, % Concordance, Sample filepath
 sample_summary_scrape <- function(html_file, url_list) {
   # convert into table
   html_table <- html_file %>% html_nodes(".table") %>% html_table()
@@ -44,21 +24,50 @@ sample_summary_scrape <- function(html_file, url_list) {
   return(sum_table)
 }
 
-# files with only one allele
-read_sample_txt <- function(filename) {
-  file_df <- fread(filename)
+# function to retrieve individuals in a sample
+# @param url (string) - url of main page of each individual 
+# @param url_domain (string) - almost always 'http://haploqa-dev.jax.org/' 
+#
+# @return file (string) - url to direct download of the file associated with individual
+sample_individual_scrape <- function(url, url_domain) {
+  # read html of website with sample data
+  html_sample <- read_html(url)
+  # get class 'btn'
+  sample_list <- html_sample %>% 
+    html_nodes(".btn") %>% html_attr("href")
+  # only retrieving SNP files for now
+  fp <- sample_list[grepl('snp', sample_list)]
+  # full file name to get from website
+  file <- paste0(url_domain, fp)
+  
+  return(file)
+}
+
+# function to read in the downloaded individual txt files
+# need to check whether the columns are consistent across all files
+# @param filepath (string) - file path the downloaded txt files are saved in
+#
+# @return df (data.frame) - individual files as data frame
+# columns of df: sample_id,	original_sample_id, snp_id,	chromosome,	position_bp, allele1_fwd,	allele2_fwd, haplotype1, haplotype2
+read_sample_txt <- function(filepath) {
+  file_df <- fread(filepath)
   if(ncol(file_df) == 9) {
     df <- file_df
   } else {
     df <- NULL # do not output if file is incorrect
     ### print a log/warning
-    print(paste0('skipped file with unaligned columns:', filename))
+    print(paste0('skipped file with unaligned columns:', filepath))
   }
   return(df)
 }
 
-# individual function
-# one function for geno
+# function to generate genotype data for qtl2 input
+# @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
+# columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+# @param annot_encode_df (data.frame) - processed UWisc annotation file with alleles
+# columns of annot_encode_df: marker, chr, allele1, allele2
+#
+# @return df_geno_encoded (data.frame) - converted genotype data in qtl2 required format
 qtl2_geno <- function(df, annot_encode_df) {
   ### genotype data
   geno_sub <- df %>% select(sample_id, snp_id, allele1_fwd, allele2_fwd) %>%
@@ -78,7 +87,14 @@ qtl2_geno <- function(df, annot_encode_df) {
   return(df_geno_encoded)
 }
 
-### function for gmap and pmap
+# function to generate genetic and physical map data for qtl2 input
+# @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
+# columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+# @param annot_df (data.frame) - raw UWisc annotation file
+# columns of annot_df: marker, chr, bp_mm10, cM_cox, cM_g2f1, strand, snp, unique, multi, unmapped, n_blast_hits, n_blast_chr, probe
+#
+# @return df_map (list) - nested list with two dataframes, one dataframe for gmap and another for pmap
+# columns of df_pmap/gmap: marker, chr, pos
 qtl2_maps <- function(df, annot_df) {
   df_maps <- list()
   map_df <- df %>% 
@@ -101,24 +117,37 @@ qtl2_maps <- function(df, annot_df) {
   return(df_maps)
 }
 
-### function to simulate phenotype data
+# function to simulate phenotype data for qtl2 input
+# @param list_pheno (list) - list of phenotype names to be simulated
+# @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
+# columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+#
+#
+# @return df_pheno (data.frame) - simulated phenotype data in qtl2 required format
 qtl2_pheno <- function(list_pheno, df) {
-  df <- df %>% select(sample_id) %>% unique()
+  df_pheno <- df %>% select(sample_id) %>% unique()
   for (i in seq(1:length(list_pheno))) {
     print('phenotypes:')
     print(list_pheno[i])
-    df[[as.character(list_pheno[i])]] <- floor(runif(nrow(df), 1, 500))
+    df_pheno[[as.character(list_pheno[i])]] <- floor(runif(nrow(df_pheno), 1, 500))
   }
-  return(df)
+  
+  return(df_pheno)
 }
 
-### covariate data
-qtl2_cov <- function(df_unfiltered, split_level, df) {
+# function to generate phenotype covariate data for qtl2 input
+# @param df_raw (data.frame) - raw combined dataframe containing all individual file, nothing removed
+# @param split_level (int) - value to split genders
+# @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
+# columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+#
+# @return df_covar (list) - phenotype covariate data in qtl2 required format
+qtl2_cov <- function(df_raw, split_level, df) {
   split_level <- as.numeric(split_level) # make sure it's a number
   ### if 'x' and 'y' both here, merge and use scatterplot
-  if (any(c('Y', 'y') %in% df_unfiltered$chromosome) & any(c('X', 'x') %in% df_unfiltered$chromosome)) {
-    df_cov_all_xy <- df_unfiltered %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df_all$sample_id)) %>%
+  if (any(c('Y', 'y') %in% df_raw$chromosome) & any(c('X', 'x') %in% df_raw$chromosome)) {
+    df_cov_all_xy <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
+      filter(sample_id %in% unique(df$sample_id)) %>%
       filter(chromosome %in% c('X', 'Y'))
     # count het_x and nc_y
     nc_y <- df_cov_all_xy[(df_cov_all_xy$allele1_fwd == '-') & (df_cov_all_xy$allele2_fwd == '-'),] %>% # both are '-', no call
@@ -149,10 +178,10 @@ qtl2_cov <- function(df_unfiltered, split_level, df) {
     df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
   }
   
-  if(!any(c('Y', 'y') %in% df_unfiltered$chromosome) & any(c('X', 'x') %in% df_unfiltered$chromosome)) {
+  if(!any(c('Y', 'y') %in% df_raw$chromosome) & any(c('X', 'x') %in% df_raw$chromosome)) {
     # if only X is present
-    df_cov_all_x <- df_unfiltered %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df_all$sample_id)) %>%
+    df_cov_all_x <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
+      filter(sample_id %in% unique(df$sample_id)) %>%
       filter(chromosome %in% c('X'))
     # count het_x only
     het_x <- df_cov_all_x[(df_cov_all_x$allele1_fwd != df_cov_all_x$allele2_fwd),] %>% # heterozygous
@@ -179,10 +208,10 @@ qtl2_cov <- function(df_unfiltered, split_level, df) {
     df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
   } 
   
-  if (any(c('Y', 'y') %in% df_unfiltered$chromosome) & !any(c('X', 'x') %in% df_unfiltered$chromosome)) {
+  if (any(c('Y', 'y') %in% df_raw$chromosome) & !any(c('X', 'x') %in% df_raw$chromosome)) {
     # if only Y is present
-    df_cov_all_y <- df_unfiltered %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df_all$sample_id)) %>%
+    df_cov_all_y <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
+      filter(sample_id %in% unique(df$sample_id)) %>%
       filter(chromosome %in% c('Y'))
     # count no call in y only
     nc_y <- df_cov_all_xy[(df_cov_all_xy$allele1_fwd == '-') & (df_cov_all_xy$allele2_fwd == '-'),] %>% # both are '-', no call
@@ -209,7 +238,7 @@ qtl2_cov <- function(df_unfiltered, split_level, df) {
     df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
   } 
   
-  if (!any(c('Y', 'y') %in% df_unfiltered$chromosome) & !any(c('X', 'x') %in% df_unfiltered$chromosome)) {
+  if (!any(c('Y', 'y') %in% df_raw$chromosome) & !any(c('X', 'x') %in% df_raw$chromosome)) {
     # if x and y both not present, skip gender mapping and map 'unknown's by ratio
     df_cov_all <- df %>% select(sample_id, Sex) %>% unique()
     female_ratio <- nrow(df_cov_all[df_cov_all$Sex == 'female'])/nrow(df_cov_all)
@@ -222,7 +251,19 @@ qtl2_cov <- function(df_unfiltered, split_level, df) {
   return(df_covar)
 }
 
-
+# function to generate founder genotype data for qtl2 input
+# @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
+# columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+# @param founder_url (string) - url to main page of sample that contains founder individuals, for now it's 'https://haploqa.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html'
+# @param url_list (list) - list of urls to main page of founder individuals, retrieved from founder_url
+# @param founders_dict (data.frame) - custom built dictionary for founder strain metadata
+# columns of founders_dict: founder_strain, letter, color, type, url
+# @param annot_encode_df (data.frame) - processed UWisc annotation file with alleles
+# columns of annot_encode_df: marker, chr, allele1, allele2
+#
+#
+# @return df_founders_encoded (data.frame) - encoded founder geno data for qtl2 input
+# columns of df_founders_encoded: marker, A, B, C, D, E, F, G, H
 qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_encode_df){
   founders_df <- df[grep("_", df$original_sample_id), ] %>% 
     mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
@@ -242,9 +283,16 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
   df_founders_encoded <- as.data.frame(encode_geno(test_foundergeno[,-1], founder_encode_annot))
   df_founders_encoded$marker <- rownames(df_founders_encoded)
   df_founders_encoded <- df_founders_encoded %>% select(marker, everything())
+  
   return(df_founders_encoded)
 }
 
+# function to generate cross info data for qtl2 input
+# @param summary_df (data.frame) - table as shown on HaploQA sample website, same as output of sample_summary_scrape
+# columns of summary_df: ID (sample IDs), secondary ID, Haplotype Candidate (T/F), Strain Name, Sex, % Het Calls, % Hom Calls, % No Call, % Concordance, Sample filepath
+#
+# @return founders_total (data.frame) - cross info data with sample IDs and mapped strain info for qtl2 input
+# columns of founders_total: id, A, B, C, D, E, F, G, H
 qtl2_ci <- function(summary_df) {
   # join with summary table and CC file in karl's github
   ### if no founder info, filter out.
@@ -257,10 +305,16 @@ qtl2_ci <- function(summary_df) {
   df_crossinfo <- merge(ci_temp, ci_sum, by = 'strain_id', all.y = T) %>% 
     select(ID, everything()) %>%
     rename(id = ID) %>% drop_na() # read_cross does not allow NAs here
+  
   return(df_crossinfo)
 }
 
-### get founder strain data from HaploQA if not exist
+# function to get individual founder strain data from HaploQA, if not exist
+# @param founder_url (string) - url to main page of sample that contains founder individuals, for now it's 'https://haploqa.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html'
+# @param url_list (list) - list of urls to main page of founder individuals, retrieved from founder_url
+#
+# @return founders_total (data.frame) - combined dataframe with all founder individual files
+# columns of founders_total: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2
 get_founder_data <- function(founder_url, url_list) {
   # get length to keep track of progress
   iter_len <- length(url_list)
@@ -274,11 +328,22 @@ get_founder_data <- function(founder_url, url_list) {
     df_temp <- as.data.frame(content(GET(file)))
     founders_total <- rbind(founders_total,df_temp)
   }
+  
  return(founders_total)
 }
 
 
-# function to generate and convert files to qtl2 input format
+# function to call the above functions, generate and convert files to qtl2 input format 
+# @param data_dir (string) - filepath to where individual files (outputs of sample_individual_scrape) are stored
+# @param sample_type (string) - type of sample being analyzed - GigaMUGA, MiniMUGA, Collaborative Cross, etc.
+# @param qtl2_output_dir (string) - directory to store qtl2 output files
+# @param summary_df (data.frame) - table as shown on HaploQA sample website, same as output of sample_summary_scrape
+# columns of summary_df: ID (sample IDs), secondary ID, Haplotype Candidate (T/F), Strain Name, Sex, % Het Calls, % Hom Calls, % No Call, % Concordance, Sample filepath
+# @param list_pheno (list) -  - list of phenotype names to be simulated
+#
+# @return file_output (list) - nested list containing all files necessary for qtl2 input
+# specifically: df_geno, df_gmap, df_pmap, df_pheno, df_covar, df_foundergeno, df_crossinfo
+# see individual functions above for column names of each dataframe
 get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, list_pheno) {
   # list container to store outputs
   file_output <- list()
@@ -299,7 +364,7 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   # all txt file from directory
   data_files <- dir(data_dir, pattern = '\\.txt$', full.names = TRUE)
   ### combine all files
-  df_all_init <- rbindlist(lapply(data_files, read_sample_txt)) # save Y chrom here for gender plotting
+  df_raw <- rbindlist(lapply(data_files, read_sample_txt)) # save Y chrom here for gender plotting
   
   # clean up summary df
   sum_df <- summary_df %>% 
@@ -309,7 +374,7 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   
   # eliminate those that has no call > 10%
   ### use checkifnot to make sure the markers/SNP are in the annotation file (annotation file is the boss)
-  df_all <- merge(df_all_init, sum_df, by = 'sample_id') %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M'))
+  df_all <- merge(df_raw, sum_df, by = 'sample_id') %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M'))
   
   ### genotype data
   df_geno <- qtl2_geno(df_all, annot_encode_df)
@@ -331,7 +396,7 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   
   # covariate file - map to sex
   # sample_id, sex
-  df_covar <- qtl2_cov(df_all_init, 80, df_all)
+  df_covar <- qtl2_cov(df_raw, 80, df_all)
   file_output[[5]] <- df_covar
   print('phenotype covariate data done')
   
