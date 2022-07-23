@@ -27,11 +27,11 @@ output_dir_name <- 'cc_qtl2_gm'
 list_pheno <- c('WBC', 'NEUT')
 
 #### Set toggles
-generate_summary <- TRUE # set to TRUE to generate summary table
-output_summary <- TRUE # set to TRUE to output summary table to data directory
-generate_sample_individuals <- TRUE # set to TRUE to generate individual sample data
-output_samples <- TRUE 
-qtl2_file_gen <- TRUE
+generate_summary <- FALSE # set to TRUE to generate summary table
+output_summary <- FALSE # set to TRUE to output summary table to data directory
+generate_sample_individuals <- FALSE # set to TRUE to generate individual sample data
+output_samples <- FALSE 
+qtl2_file_gen <- FALSE
 
 
 ### Environment
@@ -122,7 +122,10 @@ summary_df <- fread(paste0(data_dir, '/collaborative_cross_summary.csv'))
 ### Part 2 - convert results to qtl2 input format
 
 # implement function
-file_output <- get_qtl2_input(data_dir, sample_type, qtl2_dir, summary_df, list_pheno)
+if(qtl2_file_gen == TRUE) {
+  file_output <- get_qtl2_input(data_dir, sample_type, qtl2_dir, summary_df, list_pheno)
+}
+
 
 # order the chromosomes?
 chr_order <- c((0:19),"X","Y")
@@ -193,16 +196,56 @@ if (qtl2_file_gen == TRUE) {
 cc_test <- read_cross2(control_fp)
 map <- cc_test$gmap 
 
+# attributes
+total_ind <- 192
+num_chr <- c((1:19),"X")
+
 # calculations
 pr <- calc_genoprob(cross=cc_test, map=map, error_prob=0.002)
-ginf <- maxmarg(pr)
+ginf <- maxmarg(pr, minprob = 0.01) # lower minprob to 0.01
 ph_geno <- guess_phase(cc_test, ginf)
 pos <- locate_xo(ginf, map) # locations of crossovers in each individual on each chr
 
+founder_codes <- c('AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH')
+map_codes <- c(1, 2, 3, 4, 5, 6, 7, 8)
+founder_lookup <- setNames(founder_codes, map_codes)
+founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
+founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
+
+## process haploqa data
+df_all <- haplotype_reconstruct(summary_df, data_dir)
+df_test <- df_all %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
+df_test[,c(3,4)] <- as.data.frame(apply(df_test[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
+df_test$haplotype <- paste(df_test$haplotype1, df_test$haplotype2, sep='')
+
+# map ginf(output of maxmarg) to founder strains in the order of AA, BB, CC, etc.
+# then compare with haplotypes from HaploQA
+# run for each chromosome
+for (chr in num_chr) {
+  chr <- 1
+  ## qtl2
+  # rowname is sample id
+  df <- as.data.frame(ginf[[chr]])
+  df_chr_qtl2 <- apply(df, 2, function(x) founder_lookup[x]) # column level
+  rownames(df_chr_qtl2) <- rownames(df)
+  
+  ## haploqa
+  df_chr_haploqa <- df_test %>% filter(chromosome == chr) %>% select(sample_id, snp_id, haplotype) %>% dcast(sample_id~snp_id, value.var = 'haplotype')
+  rownames(df_chr_haploqa) <- df_chr_haploqa$sample_id
+  df_chr_haploqa <- df_chr_haploqa %>% select(-sample_id)
+  
+  ## this haplotype info was pulled from unprocessed df, so some snps/samples might not be in qtl2 (due to genotype discrepancies, etc)
+  ## make sure all snps are consistent with that of genotype data
+  df_chr_haploqa <- df_chr_haploqa[rownames(df_chr_qtl2),colnames(df_chr_qtl2)]
+  
+  # compare differences
+  diff <- +(!((df_chr_haploqa == df_chr_qtl2) * 1))
+  diff$sample_ids <- rownames(diff)
+  
+}
+
 
 # output plots to pdf
-total_ind <- 192
-num_chr <- c((1:19),"X")
 
 ### visualizations
 ### to-do: structures of files? and write into a function
@@ -234,4 +277,4 @@ for (chr in num_chr) {
   write.csv(pr[[chr]], paste0(results_dir, '/prob_chr_', x, '.csv'), row.names = F)
 }
 
-
+### markdown file that goes through the entire pipeline for gigamuga, minimuga, or other chosen samples

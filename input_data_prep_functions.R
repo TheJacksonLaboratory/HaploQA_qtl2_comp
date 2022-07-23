@@ -140,113 +140,53 @@ qtl2_pheno <- function(list_pheno, df) {
 # @param split_level (int) - value to split genders
 # @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
 # columns of df: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2, Sex, % Het. Calls, % No Call, Platform
+# @param plot_type (string) - type of plot (percent or count)
 #
 # @return df_covar (list) - phenotype covariate data in qtl2 required format
-qtl2_cov <- function(df_raw, split_level, df) {
+qtl2_cov <- function(df_raw, split_level, df, plot_type) { # list of unique sample ids instead of df
   split_level <- as.numeric(split_level) # make sure it's a number
   ### if 'x' and 'y' both here, merge and use scatterplot
-  if (any(c('Y', 'y') %in% df_raw$chromosome) & any(c('X', 'x') %in% df_raw$chromosome)) {
-    df_cov_all_xy <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df$sample_id)) %>%
-      filter(chromosome %in% c('X', 'Y'))
-    # count het_x and nc_y
+  # use assert to check if x and y chromosomes both exist
+  df_cov_all_xy <- df_raw %>% 
+    select(sample_id, snp_id, chromosome, allele1_fwd, allele2_fwd) %>% 
+    filter(sample_id %in% unique(df$sample_id)) %>%
+    filter(chromosome %in% c('X', 'Y')) %>%
+    filter(!snp_id %like% 'PAR')
+  if (plot_type %like% 'percent') {
+    df_cov_all_xy$alleles <- paste(df_cov_all_xy$allele1_fwd, df_cov_all_xy$allele2_fwd, sep='')
+    df_cov_all_xy$alleles_nc <- ifelse(df_cov_all_xy$alleles == '--', 1, 0)
+    nc_y <- df_cov_all_xy %>% filter(chromosome == 'Y') %>% group_by(sample_id) %>% summarise(NC_Y = mean(alleles_nc)) %>% as.data.frame()
+    df_cov_all_xy$alleles_het <- ifelse(df_cov_all_xy$allele1_fwd != df_cov_all_xy$allele2_fwd, 1, 0)
+    het_x <- df_cov_all_xy %>% filter(chromosome == 'X') %>% group_by(sample_id) %>% summarise(Het_X = mean(alleles_het)) %>% as.data.frame()
+  }
+  if (plot_type %like% 'count') {
     nc_y <- df_cov_all_xy[(df_cov_all_xy$allele1_fwd == '-') & (df_cov_all_xy$allele2_fwd == '-'),] %>% # both are '-', no call
       filter(chromosome == 'Y') %>%
       group_by(sample_id) %>% summarise(NC_Y = n())
     het_x <- df_cov_all_xy[(df_cov_all_xy$allele1_fwd != df_cov_all_xy$allele2_fwd),] %>% # heterozygous
       filter(chromosome == 'X') %>%
       group_by(sample_id) %>% summarise(Het_X = n())
-    plot_all <- merge(nc_y, het_x, by = 'sample_id', all = T)
-    # scatterplot to show results
-    plot <- ggplot(plot_all) + aes(x = Het_X, y = NC_Y, label = sample_id) + geom_point() + 
-      geom_text_repel(size=3, max.overlaps = 20) + ggtitle('SNP count - Heterozygous on X vs. No call on Y in each sample')
-    print('please see plot for gender splitting and adjust accordingly')
-    print(plot)
-    # split genders
-    females_list <- plot_all[plot_all$NC_Y > split_level,]$sample_id
-    males_list <- plot_all[plot_all$NC_Y < split_level,]$sample_id
-    # create new column
-    df_cov_all <- df %>% select(sample_id, Sex)
-    df_cov_all$calc_sex <- NA
-    # calculated gender
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% females_list] <- 'female'
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% males_list] <- 'male'
-    # list of difference in calculated gender and original
-    sex_diff <- unique(df_cov_all[(df_cov_all$Sex != df_cov_all$calc_sex),]$sample_id)
-    print(paste0('Samples with different calculated gender than original entered: ', paste(sex_diff, collapse=', ' )))
-    # select columns needed
-    df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
   }
-  
-  if(!any(c('Y', 'y') %in% df_raw$chromosome) & any(c('X', 'x') %in% df_raw$chromosome)) {
-    # if only X is present
-    df_cov_all_x <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df$sample_id)) %>%
-      filter(chromosome %in% c('X'))
-    # count het_x only
-    het_x <- df_cov_all_x[(df_cov_all_x$allele1_fwd != df_cov_all_x$allele2_fwd),] %>% # heterozygous
-      filter(chromosome == 'X') %>%
-      group_by(sample_id) %>% summarise(Het_X = n()) %>% as.data.frame()
-    # density plot to show one variable
-    plot <- ggplot(het_x, aes(x = Het_X)) + geom_density(aes(y = ..count..), fill = "lightgray") + 
-      geom_vline(aes(xintercept = mean(Het_X)), linetype = "dashed") + annotate(x=mean(het_x$Het_X), y=+Inf, label = round(mean(het_x$Het_X), 4), vjust = 1, geom = 'label')
-    print('please see plot for gender splitting and adjust accordingly')
-    print(plot)
-    # split genders
-    females_list <- het_x[het_x$Het_X > split_level,]$sample_id
-    males_list <- het_x[het_x$Het_X < split_level,]$sample_id
-    # create new column
-    df_cov_all <- df %>% select(sample_id, Sex)
-    df_cov_all$calc_sex <- NA
-    # calculated gender
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% females_list] <- 'female'
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% males_list] <- 'male'
-    # list of difference in calculated gender and original
-    sex_diff <- unique(df_cov_all[(df_cov_all$Sex != df_cov_all$calc_sex),]$sample_id)
-    print(paste0('Samples with different calculated gender than original entered: ', paste(sex_diff, collapse=', ' )))
-    # select columns needed
-    df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
-  } 
-  
-  if (any(c('Y', 'y') %in% df_raw$chromosome) & !any(c('X', 'x') %in% df_raw$chromosome)) {
-    # if only Y is present
-    df_cov_all_y <- df_raw %>% select(sample_id, chromosome, allele1_fwd, allele2_fwd) %>% 
-      filter(sample_id %in% unique(df$sample_id)) %>%
-      filter(chromosome %in% c('Y'))
-    # count no call in y only
-    nc_y <- df_cov_all_xy[(df_cov_all_xy$allele1_fwd == '-') & (df_cov_all_xy$allele2_fwd == '-'),] %>% # both are '-', no call
-      filter(chromosome == 'Y') %>%
-      group_by(sample_id) %>% summarise(NC_Y = n()) %>% as.data.frame()
-    # density plot to show one variable
-    plot <- ggplot(nc_y, aes(x = NC_Y)) + geom_density(aes(y = ..count..), fill = "lightgray") + 
-      geom_vline(aes(xintercept = mean(NC_Y)), linetype = "dashed") + annotate(x=mean(nc_y$NC_Y), y=+Inf, label = round(mean(nc_y$NC_Y), 4), vjust = 1, geom = 'label')
-    print('please see plot for gender splitting and adjust accordingly')
-    print(plot)
-    # split genders
-    females_list <- nc_y[nc_y$NC_Y > split_level,]$sample_id
-    males_list <- nc_y[nc_y$NC_Y < split_level,]$sample_id
-    # create new column
-    df_cov_all <- df %>% select(sample_id, Sex)
-    df_cov_all$calc_sex <- NA
-    # calculated gender
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% females_list] <- 'female'
-    df_cov_all$calc_sex[df_cov_all$sample_id %in% males_list] <- 'male'
-    # list of difference in calculated gender and original
-    sex_diff <- unique(df_cov_all[(df_cov_all$Sex != df_cov_all$calc_sex),]$sample_id)
-    print(paste0('Samples with different calculated gender than original entered: ', paste(sex_diff, collapse=', ' )))
-    # select columns needed
-    df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
-  } 
-  
-  if (!any(c('Y', 'y') %in% df_raw$chromosome) & !any(c('X', 'x') %in% df_raw$chromosome)) {
-    # if x and y both not present, skip gender mapping and map 'unknown's by ratio
-    df_cov_all <- df %>% select(sample_id, Sex) %>% unique()
-    female_ratio <- nrow(df_cov_all[df_cov_all$Sex == 'female'])/nrow(df_cov_all)
-    map_female_num <- floor(nrow(df_cov_all[df_cov_all$Sex == 'unknown']) * female_ratio)
-    df_cov_all$Sex[df_cov_all$Sex == 'unknown'][1:map_female_num] <- 'female'
-    df_cov_all$Sex[df_cov_all$Sex == 'unknown'] <- 'male' # rest is male
-    df_covar <- df_cov_all
-  }
+  plot_all <- merge(nc_y, het_x, by = 'sample_id', all = T)
+  # scatterplot to show results
+  plot <- ggplot(plot_all) + aes(x = Het_X, y = NC_Y, label = sample_id) + geom_point() +
+    geom_text_repel(size=3, max.overlaps = 50) + ggtitle(paste0('SNP ', plot_type, ' - Heterozygous on X vs. No call on Y in each sample'))
+  print('please see plot for gender splitting and adjust accordingly')
+  print(plot)
+  # split genders
+  females_list <- plot_all[plot_all$NC_Y > split_level,]$sample_id
+  males_list <- plot_all[plot_all$NC_Y < split_level,]$sample_id
+  # create new column
+  df_cov_all <- df %>% select(sample_id, Sex)
+  df_cov_all$calc_sex <- NA
+  # calculated gender
+  df_cov_all$calc_sex[df_cov_all$sample_id %in% females_list] <- 'female'
+  df_cov_all$calc_sex[df_cov_all$sample_id %in% males_list] <- 'male'
+  # list of difference in calculated gender and original
+  sex_diff <- unique(df_cov_all[(df_cov_all$Sex != df_cov_all$calc_sex),]$sample_id)
+  print(paste0('Samples with different calculated gender than original entered: ', paste(sex_diff, collapse=', ' )))
+  # select columns needed
+  df_covar <- df_cov_all %>% select(sample_id, calc_sex) %>% rename(id = sample_id, Sex = calc_sex) %>% unique()
   
   return(df_covar)
 }
@@ -332,6 +272,25 @@ get_founder_data <- function(founder_url, url_list) {
  return(founders_total)
 }
 
+haplotype_reconstruct <- function(summary_df, data_dir) {
+  # all txt file from directory
+  data_files <- dir(data_dir, pattern = '\\.txt$', full.names = TRUE)
+  ### combine all files
+  df_raw <- rbindlist(lapply(data_files, read_sample_txt)) # save Y chrom here for gender plotting
+  
+  # clean up summary df
+  sum_df <- summary_df %>% 
+    select(ID, Sex, `% Het. Calls`, `% No Call`, Platform) %>% rename(sample_id = ID)
+  sum_df$`% Het. Calls` <- as.numeric(gsub("%", "", sum_df$`% Het. Calls`))
+  sum_df$`% No Call` <- as.numeric(gsub("%", "", sum_df$`% No Call`))
+  
+  # eliminate those that has no call > 10%
+  ### use checkifnot to make sure the markers/SNP are in the annotation file (annotation file is the boss)
+  df_all <- merge(df_raw, sum_df, by = 'sample_id') %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M'))
+  
+  return(df_all)
+}
+
 
 # function to call the above functions, generate and convert files to qtl2 input format 
 # @param data_dir (string) - filepath to where individual files (outputs of sample_individual_scrape) are stored
@@ -396,7 +355,7 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   
   # covariate file - map to sex
   # sample_id, sex
-  df_covar <- qtl2_cov(df_raw, 80, df_all)
+  df_covar <- qtl2_cov(df_raw, 80, df_all, 'percent')
   file_output[[5]] <- df_covar
   print('phenotype covariate data done')
   
