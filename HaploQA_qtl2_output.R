@@ -213,7 +213,7 @@ founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
 founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
 
 ## process haploqa data
-df_all <- haplotype_reconstruct(summary_df, data_dir)
+df_all <- get_haplotypes(summary_df, data_dir)
 df_test <- df_all %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
 df_test[,c(3,4)] <- as.data.frame(apply(df_test[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
 df_test$haplotype <- paste(df_test$haplotype1, df_test$haplotype2, sep='')
@@ -240,6 +240,7 @@ for (chr in num_chr) {
   
   # compare differences
   diff <- +(!((df_chr_haploqa == df_chr_qtl2) * 1))
+  #test <- df_chr_haploqa[df_chr_haploqa == df_chr_qtl2]
   diff$sample_ids <- rownames(diff)
   
 }

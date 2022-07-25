@@ -272,7 +272,12 @@ get_founder_data <- function(founder_url, url_list) {
  return(founders_total)
 }
 
-haplotype_reconstruct <- function(summary_df, data_dir) {
+# function to retrieve only the dataframe that all qtl2 input dataframes were based on for testing purposes, and/or the haplotype columns
+# @param summary_df (data.frame) - table as shown on HaploQA sample website, same as output of sample_summary_scrape
+# @param data_dir (string) - filepath to where individual files (outputs of sample_individual_scrape) are stored
+#
+# @return df_all (data.frame) - dataframe with haplotype columns
+get_haplotypes <- function(summary_df, data_dir) {
   # all txt file from directory
   data_files <- dir(data_dir, pattern = '\\.txt$', full.names = TRUE)
   ### combine all files
@@ -334,15 +339,19 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   # eliminate those that has no call > 10%
   ### use checkifnot to make sure the markers/SNP are in the annotation file (annotation file is the boss)
   df_all <- merge(df_raw, sum_df, by = 'sample_id') %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M'))
+  stopifnot("There are markers in qtl2 dataframe not present in annotation file, check validity or exclude such markers" = any(!unique(df_all$snp_id) %in% annot_df$marker) == FALSE) # if there is any marker from df that's not in annotation, raise error
   
   ### genotype data
   df_geno <- qtl2_geno(df_all, annot_encode_df)
+  stopifnot("NAs present in genotype data" = any(is.na(df_geno)) == FALSE) # if there is any NAs, raise error
   # save to output
   file_output[[1]] <- df_geno 
   print('genotype data done')
   
   ### gmap and pmap 
   df_maps <- qtl2_maps(df_all, annot_df)
+  stopifnot("NAs present in genetic map data" = any(is.na(df_maps[[1]])) == FALSE) # if there is any NAs, raise error
+  stopifnot("NAs present in physical map data" = any(is.na(df_maps[[2]])) == FALSE) # if there is any NAs, raise error
   # save to output
   file_output[[2]] <- df_maps[[1]] # gmap
   file_output[[3]] <- df_maps[[2]] # pmap
@@ -350,12 +359,15 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   ## phenotype data
   # simulate using rnorm/runiform
   df_pheno <- qtl2_pheno(list_pheno, df_all)
+  stopifnot("NAs present in phenotype data" = any(is.na(df_pheno)) == FALSE) # if there is any NAs, raise error
   file_output[[4]] <- df_pheno
   print('phenotype data done')
   
   # covariate file - map to sex
   # sample_id, sex
   df_covar <- qtl2_cov(df_raw, 80, df_all, 'percent')
+  stopifnot("NAs present in phenotype covariate data" = any(is.na(df_covar)) == FALSE)
+  stopifnot("Sample IDs in covariate data do not align with input" = length(setdiff(unique(df_covar$id), unique(df_all$sample_id))) == 0)
   file_output[[5]] <- df_covar
   print('phenotype covariate data done')
   
