@@ -237,14 +237,10 @@ qtl2_ci <- function(summary_df) {
   # join with summary table and CC file in karl's github
   ### if no founder info, filter out.
   # match the strain names with the cc cross info csv
-  ci_temp <- read.csv('https://raw.githubusercontent.com/rqtl/qtl2data/main/CC/cc_crossinfo.csv', skip=3) %>% 
-    separate(id, c("strain_id", "sec_id"), "/") %>% select(-sec_id)
-  ci_sum <- summary_df %>% select(`Strain Name`, `ID`)
-  ci_sum$strain_id <- str_extract(ci_sum$`Strain Name`, "CC...")
-  ci_sum <- ci_sum %>% select(-`Strain Name`)
-  df_crossinfo <- merge(ci_temp, ci_sum, by = 'strain_id', all.y = T) %>% 
-    select(ID, everything()) %>%
-    rename(id = ID) %>% drop_na() # read_cross does not allow NAs here
+  ci_sum <- summary_df %>% select(`ID`) %>% unique() %>% rename(id = ID)
+  ci_sum$ngen <- 4
+  ci_sum[ ,c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H')] <- 1
+  df_crossinfo <- ci_sum # read_cross does not allow NAs here
   
   return(df_crossinfo)
 }
@@ -384,12 +380,12 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   url_list <- paste0(url_domain, html_table[grepl('/sample', html_table)])
   
   # get founder data
-  fp_founders <- file.path(qtl2_output_dir, 'UNC_Villena_founder_samples.csv')
+  fp_founders <- file.path(root, 'UNC_Villena_founder_samples.csv')
   if (file.exists(fp_founders)) {
     founders_total <- fread(fp_founders)
   } else { 
-    founders_total <- get_founder_data(founder_url)
-    write.csv(founders_total, paste0(qtl2_output_dir, '/UNC_Villena_founder_samples.csv'), row.names = F)
+    founders_total <- get_founder_data(founder_url, url_list)
+    write.csv(founders_total, paste0(root, '/UNC_Villena_founder_samples.csv'), row.names = F)
   }
   
   df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df)

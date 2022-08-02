@@ -15,6 +15,7 @@ library(ggrepel)
 library(reshape2)
 library(stats)
 library(ggplot2)
+library(stringr)
 
 
 # source the function script
@@ -22,17 +23,17 @@ root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
 
 #### change the below params
-dir_name <- 'haploqa_cc_gm' # enter directory name
-sample_type <- 'Collaborative Cross' # Collaborative Cross/MiniMUGA/GigaMUGA
-output_dir_name <- 'cc_qtl2_gm'
+dir_name <- 'haploqa_do' # enter directory name
+sample_type <- 'DO' # Collaborative Cross/MiniMUGA/GigaMUGA/DO
+output_dir_name <- 'do_qtl2_genail'
 list_pheno <- c('WBC', 'NEUT')
 
 #### Set toggles
-generate_summary <- FALSE # set to TRUE to generate summary table
-output_summary <- FALSE # set to TRUE to output summary table to data directory
-generate_sample_individuals <- FALSE # set to TRUE to generate individual sample data
-output_samples <- FALSE 
-qtl2_file_gen <- FALSE
+generate_summary <- TRUE # set to TRUE to generate summary table
+output_summary <- TRUE # set to TRUE to output summary table to data directory
+generate_sample_individuals <- TRUE # set to TRUE to generate individual sample data
+output_samples <- TRUE 
+qtl2_file_gen <- TRUE
 
 
 ### Environment
@@ -61,7 +62,7 @@ if (file.exists(control_fp) == FALSE) {
 # set main URL domain
 url_domain <- 'http://haploqa-dev.jax.org/' 
 # target sample URL
-sample_url <- 'http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html' # change to the URL of sample
+sample_url <- 'http://haploqa-dev.jax.org/tag/J:DO.html' # change to the URL of sample
 
 #### html file prep
 # read html file
@@ -78,7 +79,7 @@ if (generate_summary == TRUE) {
   sum_df <- sample_summary_scrape(haploqa_html, url_list)
   if (output_summary == TRUE) {
     print('Writing to directory')
-    write.csv(sum_df, paste0(data_dir, '/collaborative_cross_summary.csv'), row.names = FALSE)
+    write.csv(sum_df, paste0(data_dir, '/', sample_type, '_summary.csv'), row.names = FALSE)
   }
 }
 
@@ -118,7 +119,7 @@ for (url in url_ind) {
 }
 
 # for testing - read the summary file if not regenerating above, as it's needed for below
-summary_df <- fread(paste0(data_dir, '/collaborative_cross_summary.csv'))
+summary_df <- fread(paste0(data_dir, '/DO_summary.csv'))
 
 ### Part 2 - convert results to qtl2 input format
 
@@ -145,7 +146,7 @@ df_pheno <- file_output[[4]]
 df_covar <- file_output[[5]]
 df_foundergeno <- file_output[[6]] # with strain id metadata
 df_crossinfo <- file_output[[7]]
-df_crossinfo <- df_crossinfo %>% select(-strain_id) # read_cross only takes 8 columns
+#df_crossinfo <- df_crossinfo %>% select(-strain_id) # read_cross only takes 8 columns
 
 if (qtl2_file_gen == TRUE) {
   write.csv(df_geno, paste0(qtl2_dir, '/test_geno.csv'), row.names = F)
@@ -157,10 +158,11 @@ if (qtl2_file_gen == TRUE) {
   write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
 }
 
-
+## genail8
+# id ngen a,b,c,d,e,f,g,h
 control_file <- '{
   "description": "HaploQA data - qtl2 test run",
-  "crosstype": "risib8",
+  "crosstype": "genail8",
   "sep": ",",
   "na.strings": ["-", "NA"],
   "comment.char": "#",
@@ -190,6 +192,7 @@ control_file <- '{
 }'
 
 
+
 # output to file
 if (qtl2_file_gen == TRUE) {
   writeLines(control_file, control_fp)
@@ -199,15 +202,17 @@ if (qtl2_file_gen == TRUE) {
 # wrangle haploqa raw data into such format, then imitate the data structure so that output is exactly the same as guess_phase
 # plot_compare_geno
 
-
-
+#control_fp <- '/Users/linc/Documents/GitHub/HaploQA_qtl2_comp/cc_qtl2_genail/test.json'
+#df_gmap <- fread('/Users/linc/Documents/GitHub/HaploQA_qtl2_comp/cc_qtl2_genail/test_gmap.csv')
 #### Part 3 - qtl2
 # read data
 cc_test <- read_cross2(control_fp)
 map <- cc_test$gmap 
 
 # attributes
-total_ind <- 192
+total_ind <- 277
+
+
 num_chr <- c((1:19),"X")
 
 # calculations
@@ -217,12 +222,14 @@ ph_geno <- guess_phase(cc_test, ginf)
 pos <- locate_xo(ginf, map) # locations of crossovers in each individual on each chr
 
 founder_codes <- c('AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH')
+single_codes <- sapply(founder_codes, function(x) substr(x, 1, 1))
 map_codes <- c(1, 2, 3, 4, 5, 6, 7, 8)
 founder_lookup <- setNames(founder_codes, map_codes)
-founder_reverse <- setNames(map_codes, founder_codes)
+founder_reverse <- setNames(map_codes, single_codes)
 founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
 founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
 
+summary_df <- fread('/Users/linc/Documents/GitHub/HaploQA_qtl2_comp/haploqa_cc_gm/collaborative_cross_summary.csv')
 ## process haploqa data
 df_all <- get_haplotypes(summary_df, data_dir)
 df_test <- df_all %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
@@ -232,6 +239,7 @@ df_test$haplotype <- paste(df_test$haplotype1, df_test$haplotype2, sep='')
 # map ginf(output of maxmarg) to founder strains in the order of AA, BB, CC, etc.
 # then compare with haplotypes from HaploQA
 # run for each chromosome
+comp_matrix <- list()
 for (chr in num_chr) {
   ## qtl2
   chr <- 1
@@ -241,7 +249,6 @@ for (chr in num_chr) {
   df <- as.data.frame(ginf[[chr]])
   df_chr_qtl2 <- apply(df, 2, function(x) founder_lookup[x]) # column level
   rownames(df_chr_qtl2) <- rownames(df)
-  
   
   ## haploqa
   df_chr_haploqa <- df_test %>% filter(chromosome == chr) %>% select(sample_id, snp_id, haplotype) %>% dcast(sample_id~snp_id, value.var = 'haplotype')
@@ -259,18 +266,29 @@ for (chr in num_chr) {
   df_chr_qtl2$marker <- rownames(df_chr_qtl2)
   df_chr_qtl2_comp <- merge(df_chr_qtl2, map_chr, by = 'marker')
   
-  qtl2_comp <- df_chr_qtl2_comp[1:(ncol(df_chr_haploqa))]
-  haploqa_comp <- df_chr_haploqa_comp[1:(ncol(df_chr_haploqa_comp))]
+  qtl2_comp <- df_chr_qtl2_comp[1:(ncol(df_chr_haploqa))] %>% select(-c(marker))
+  haploqa_comp <- df_chr_haploqa_comp[1:(ncol(df_chr_haploqa_comp))] %>% select(-c(marker, pos))
   
-  temp <- rbind(qtl2_comp, qtl2_comp)
-  temp %>% arrange(marker)
-  temp %>% group_by(marker) %>% summarise(Freq=n_distinct(`35V`))
+  col_list <- names(haploqa_comp)
   
-  dcast(setDT(qtl2_comp), marker~everything(), length)
-  dcast(setDT(haploqa_comp), marker~`35V`, length)
+  ### loop through each matching column within both dataframes
+  result_df <- data.frame()
+  for (col in seq(1:ncol(qtl2_comp))) {
+    #col <- 1
+    print(col)
+    df_match <- data.frame('qtl2_ind' = qtl2_comp[,col], 'haploqa_ind' = haploqa_comp[,col])
+    t1 <- dcast(df_match, qtl2_ind ~ haploqa_ind, value.var = 'haploqa_ind', fun.aggregate = length)
+    result_df <- bind_rows(result_df, t1) %>% group_by(qtl2_ind) %>% summarise(across(everything(), ~ sum(.x, na.rm = TRUE))) %>% as.data.frame()
+  }
+  result_df <- result_df %>% rename(geno_code = qtl2_ind) 
   
-  table(qtl2_comp)
+  result_df <- result_df%>%
+    select(geno_code, AA, BB, CC, DD, EE, FF, GG, HH, sort(names(.)))
   
+  comp_matrix[[chr]] <- result_df
+  #write.csv(result_df, paste0(results_dir, '/comp_matrix_chr_', chr, '.csv'), row.names = F)
+  
+  ### percent genomic difference
   chr_pct <- c()
   ind_list <- colnames(df_chr_qtl2_comp[2:(ncol(df_chr_haploqa))])
   
@@ -293,6 +311,7 @@ for (chr in num_chr) {
   
    print(paste0('percent genomic difference between qtl2 and haploqa haplotype results of ind ', ind, ' on chr ', chr, ': ', pct))
   }
+  
   chr_diff <- data.frame('individuals' = ind_list, 'genome_pct_diff' = chr_pct)
   chr_diff$chr <- chr
   chr_diff$ind <- seq(1:(total_ind))
@@ -311,48 +330,63 @@ for (chr in num_chr) {
 
 # keep the samples that were genotyped for better comparison
 
-df_haplo <- df_test %>% select(sample_id, snp_id, chromosome, haplotype) %>% rename(marker = snp_id, chr = chromosome)
-df_haplo[,4] <- as.data.frame(apply(df_haplo[,4], 2, function(x) founder_reverse[x])) ## heterozygosity?
-df_haplo <- df_haplo[!is.na(df_haplo$haplotype)] ## drop the heterozygous ones for now to get it up and running 
+df_haplo <- df_test %>% select(sample_id, snp_id, chromosome, haplotype1, haplotype2) %>% rename(marker = snp_id, chr = chromosome)
+df_haplo[,c(4,5)] <- as.data.frame(apply(df_haplo[,c(4,5)], 2, function(x) founder_reverse[x])) ## heterozygosity?
 
 df_chr_all <- merge(df_haplo, df_gmap, by = 'marker') # to align with the markers and samples
-df_chr_all <- df_chr_all %>% select(marker, sample_id, pos, chr.x, haplotype) %>% rename(chr = chr.x)
+df_chr_all <- df_chr_all %>% select(marker, sample_id, pos, chr.x, haplotype1, haplotype2) %>% rename(chr = chr.x, mom = haplotype1, dad = haplotype2)
 
 ### drop the cross_info samples?
 
-qtl2_geno <- cc_test$geno
+#qtl2_geno <- cc_test$geno
 
 df_haplo_geno <- list()
 df_haplo_map <- list()
 for (i in num_chr) {
+  #i<-1
   print(i)
-  marker_list <- colnames(qtl2_geno[[i]])
-  sample_list <- rownames(qtl2_geno[[i]])
-  #i <- 1
+  #marker_list <- colnames(qtl2_geno[[i]])
+  #sample_list <- rownames(qtl2_geno[[i]])
+  #i <- 'X'
+  ## output should be the same as cc_test$gmap
+  df_map <- df_chr_all %>% filter(chr == i) %>% select(marker, pos) %>% unique() %>% as.data.frame() %>% arrange(pos)
+  rownames(df_map) <- df_map$marker
+  df_map_1 <- df_map %>% select(-marker) %>% t() #%>% as.vector()
+  #names(df_map_1) <- df_map$marker
+  df_haplo_map[[i]] <- df_map_1
+  
+  col_order <- df_map$marker
+  
   ## output should be the same as cc_test$geno
   df_chr <- df_chr_all %>% filter(chr == i) %>% select(-c(chr, pos))
-  df_chr<- df_chr %>% filter(marker %in% marker_list) %>% filter(sample_id %in% sample_list)
-  df_chr <- dcast(df_chr, sample_id~marker, value.var = 'haplotype')
-
-  rownames(df_chr) <- df_chr$sample_id
-  df_chr <- df_chr %>% select(-c(sample_id)) %>% as.matrix()
-
-  df_haplo_geno[[i]] <- df_chr
+  #df_chr <- df_chr %>% filter(marker %in% marker_list) %>% filter(sample_id %in% sample_list)
+  df_mom <- df_chr %>% select(marker, sample_id, mom) %>% dcast(sample_id~marker, value.var = 'mom')
+  rownames(df_mom) <- df_mom$sample_id
+  df_mom <- df_mom %>% select(-c(sample_id)) %>% as.matrix()
+  df_mom <- df_mom[,col_order]
+  df_dad <- df_chr %>% select(marker, sample_id, dad) %>% dcast(sample_id~marker, value.var = 'dad')
+  rownames(df_dad) <- df_dad$sample_id
+  df_dad <- df_dad %>% select(-c(sample_id)) %>% as.matrix()
+  df_dad <- df_dad[,col_order]
   
-  ## output should be the same as cc_test$gmap
-  df_map <- df_chr_all %>% filter(chr == i) %>% select(marker, pos) %>% unique() %>% as.data.frame()
-  rownames(df_map) <- df_map$marker
-  df_map <- df_map %>% select(-marker) %>% t() %>% as.matrix()
-  df_haplo_map[[i]] <- df_map
+  df_haplo_geno[[i]] <- array(dim = c(nrow(df_mom), ncol(df_mom),2), dimnames=list(rownames(df_mom), colnames(df_mom), c('mom', 'dad'))) # should be the same
+  df_haplo_geno[[i]][,,1] <- df_dad
+  df_haplo_geno[[i]][,,2] <- df_mom
+  
+  
+  
+  
 }
+
+
 
 ### visualizations
 ### to-do: structures of files? and write into a function
 # genowide genotype
-pdf(file = paste0(results_dir, '/test_geno_plots_comp.pdf'), width=20, height=10, bg="white")
+pdf(file = paste0(results_dir, '/geno_plots_comp_cc.pdf'), width=20, height=10, bg="white")
 for (ind in seq(1:total_ind)) {
   print(ind)
-  #ind <- 1
+  #ind <- #
   par(mfrow = c(1, 2))
   plot_onegeno(ph_geno, map, ind = ind, shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', ind))  # one individual's geno_wide genotype
   plot_onegeno(df_haplo_geno, df_haplo_map, ind = ind, shift = TRUE, main = paste0('haploqa - Geno-wide genotypes of individual ', ind))  # one individual's geno_wide genotype
@@ -380,13 +414,5 @@ for (chr in num_chr) {
 }
 
 ### markdown file that goes through the entire pipeline for gigamuga, minimuga, or other chosen samples
-library(qtl)
-data(map10)
-chrL <- round(summary(map10)$length[1:20])
-map <- sim.map(len=chrL, n.mar=chrL+1, include.x=TRUE, eq.spacing=TRUE)
-n <- 500
-bc <- sim.cross(map, n.ind=n, type="bc", missing.prob=0.05)
-bc$pheno$sex <- rep(0:1, each=n/2)
-
 
 
