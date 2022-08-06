@@ -1,4 +1,5 @@
-array_type,annot_file,dict_file
-Collaborative Cross,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv
-GigaMUGA,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv
-MiniMUGA,mini_uwisc_v1.csv,mini_uwisc_dict_v1.csv
+array_type,annot_file,dict_file,data_dir,qtl2_dir
+CC,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_cc_gm,cc_qtl2_genail
+GigaMUGA,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,,
+MiniMUGA,mini_uwisc_v1.csv,mini_uwisc_dict_v1.csv,,
+DO,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_do,do_qtl2_genail

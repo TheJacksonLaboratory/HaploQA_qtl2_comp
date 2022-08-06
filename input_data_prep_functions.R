@@ -401,3 +401,95 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   
   return(file_output)
 }
+
+# sort chromosomes into order
+sort_chr <- function(df, sort_order) {
+  df$chr <- factor(df$chr, levels = sort_order)
+  df <- df[order(df$chr),] 
+  return(df)
+}
+
+## if rds file don't exist for the sample type, read cross
+save_rds <- function(qtl2_dir, sample_type, results_dir) {
+  # directory to save rds in
+  rds_dir <- paste0(results_dir, '/', sample, '_RDS')
+  dir.create(rds_dir, showWarnings = FALSE) 
+  
+  # check if control file exist
+  control_fp <- paste0(qtl2_dir, '/test.json')
+  if (file.exists(control_fp) == FALSE) {
+    stop(paste0('Cross file not found in ', qtl2_dir))
+  }
+  # read cross file
+  cross_file <- read_cross2(control_fp)
+  map <- cross_file$gmap
+  # calculations
+  
+  ### save rds files: pr, ginf, ph_geno, pos
+  # genoprob
+  pr_fp <- paste0(rds_dir, "/pr_", sample_type, ".rds")
+  if (!file.exists(pr_fp)) {
+    print('genoprob file does not exist, running calculations')
+    pr <- calc_genoprob(cross=cross_file, map=map, error_prob=0.002, cores = 2)
+    print('saving genoprob file')
+    saveRDS(pr, file = pr_fp)
+  } else {
+    print('genoprob file exists, reading in file')
+    pr <- readRDS(pr_fp)
+  }
+  
+  # maxmarg
+  ginf_fp <- paste0(rds_dir, "/ginf_", sample_type, ".rds")
+  if(!file.exists(ginf_fp)) {
+    print('maxmarg file does not exist, running calculations')
+    ginf <- maxmarg(pr, minprob = 0.01) # lower minprob to 0.01
+    print('saving maxmarg file')
+    saveRDS(ginf, file = ginf_fp)
+  } else {
+    print('maxmarg file exists, reading in file')
+    ginf <- readRDS(ginf_fp)
+  }
+  
+  # phased geno
+  ph_geno_fp <- paste0(rds_dir, "/ph_geno_", sample_type, ".rds")
+  if(!file.exists(ph_geno_fp)) {
+    print('phased geno file does not exist, running calculations')
+    ph_geno <- guess_phase(cross_file, ginf)
+    print('saving phased file')
+    saveRDS(ph_geno, file = ph_geno_fp)
+  } else {
+    print('phased geno file exists, reading in file')
+    ph_geno <- readRDS(ph_geno_fp)
+  }
+  
+  # crossover locations
+  pos_fp <- paste0(rds_dir, "/pos_", sample_type, ".rds")
+  if (!file.exists(pos_fp)) {
+    print('location crossover file does not exist, running calculations')
+    pos <- locate_xo(ginf, map) 
+    print('saving location crossover file')
+    saveRDS(pos, file = pos_fp)
+  } else {
+    print('location crossover file exists, reading in file')
+    pos <- readRDS(pos_fp)
+  }
+  
+
+  return(rds_dir)
+}
+
+rds_loop <- function(samples_for_rds, config, results_dir) {
+  config_temp <- data.frame()
+  for (sample in samples_for_rds) {
+    print(sample)
+    sample_config <- config[array_type == sample]
+    
+    # according directories
+    data_dir <- file.path(root, sample_config$data_dir)
+    qtl2_dir <- file.path(root, sample_config$qtl2_dir)
+    
+    sample_config$rds_dir <- save_rds(qtl2_dir, sample, results_dir)
+    config_temp <- rbind(sample_config, config_temp)
+  } 
+  return(config_temp)
+}
