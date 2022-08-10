@@ -25,7 +25,7 @@ source(paste0(root,"/input_data_prep_functions.R"))
 
 #### change the below params
 dir_name <- 'haploqa_do' # enter directory name
-sample_type <- 'DO' # Collaborative Cross/MiniMUGA/GigaMUGA/DO
+sample_type <- 'DO' # CC/DO/MiniMUGA/GigaMUGA
 output_dir_name <- 'do_qtl2_genail'
 list_pheno <- c('WBC', 'NEUT')
 
@@ -120,7 +120,7 @@ for (url in url_ind) {
 }
 
 # for testing - read the summary file if not regenerating above, as it's needed for below
-summary_df <- fread(paste0(data_dir, '/DO_summary.csv'))
+#summary_df <- fread(paste0(data_dir, '/DO_summary.csv'))
 
 ### Part 2 - convert results to qtl2 input format
 

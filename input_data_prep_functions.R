@@ -1,6 +1,8 @@
 # contains all functions necessary to retrieve data from HaploQA and convert into qtl2 input format
 #
 #
+library(rstudioapi)
+root <- dirname(getSourceEditorContext()$path)
 #
 # function to retrieve summary table
 # @param html_file (html_document) - html of main page sample website on HaploQA, output of read_html(url)
@@ -402,7 +404,11 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   return(file_output)
 }
 
-# sort chromosomes into order
+# function to sort chromosomes into custom order
+# @param df (data.frame) - selected dataframe to be sorted
+# @param sort_order (list) - order to sort the chromosomes
+#
+# @return df (data.frame) - dataframe with chromosomes sorted in the selected order
 sort_chr <- function(df, sort_order) {
   df$chr <- factor(df$chr, levels = sort_order)
   df <- df[order(df$chr),] 
@@ -410,32 +416,40 @@ sort_chr <- function(df, sort_order) {
 }
 
 ## if rds file don't exist for the sample type, read cross
-save_rds <- function(qtl2_dir, sample_type, results_dir) {
-  # directory to save rds in
-  rds_dir <- paste0(results_dir, '/', sample, '_RDS')
-  dir.create(rds_dir, showWarnings = FALSE) 
-  
+save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir) {
   # check if control file exist
   control_fp <- paste0(qtl2_dir, '/test.json')
+  print(control_fp)
   if (file.exists(control_fp) == FALSE) {
     stop(paste0('Cross file not found in ', qtl2_dir))
   }
+
+  cross_list <- list()
   # read cross file
   cross_file <- read_cross2(control_fp)
-  map <- cross_file$gmap
-  # calculations
+  cross_list[['cross']] <- cross_file
   
+  ### save map individually as well
+  map <- cross_file$gmap
+  map_fp <- paste0(rds_dir, "/map_", sample_type, ".rds")
+  saveRDS(map, file = map_fp)
+  cross_list[['map']] <- map
+  
+  # calculations
   ### save rds files: pr, ginf, ph_geno, pos
   # genoprob
   pr_fp <- paste0(rds_dir, "/pr_", sample_type, ".rds")
+  print(pr_fp)
   if (!file.exists(pr_fp)) {
     print('genoprob file does not exist, running calculations')
     pr <- calc_genoprob(cross=cross_file, map=map, error_prob=0.002, cores = 2)
     print('saving genoprob file')
+    cross_list[['pr']] <- pr
     saveRDS(pr, file = pr_fp)
   } else {
     print('genoprob file exists, reading in file')
     pr <- readRDS(pr_fp)
+    cross_list[['pr']] <- pr
   }
   
   # maxmarg
@@ -443,11 +457,13 @@ save_rds <- function(qtl2_dir, sample_type, results_dir) {
   if(!file.exists(ginf_fp)) {
     print('maxmarg file does not exist, running calculations')
     ginf <- maxmarg(pr, minprob = 0.01) # lower minprob to 0.01
+    cross_list[['ginf']] <- ginf
     print('saving maxmarg file')
     saveRDS(ginf, file = ginf_fp)
   } else {
     print('maxmarg file exists, reading in file')
     ginf <- readRDS(ginf_fp)
+    cross_list[['ginf']] <- ginf
   }
   
   # phased geno
@@ -456,10 +472,12 @@ save_rds <- function(qtl2_dir, sample_type, results_dir) {
     print('phased geno file does not exist, running calculations')
     ph_geno <- guess_phase(cross_file, ginf)
     print('saving phased file')
+    cross_list[['ph_geno']] <- ph_geno
     saveRDS(ph_geno, file = ph_geno_fp)
   } else {
     print('phased geno file exists, reading in file')
     ph_geno <- readRDS(ph_geno_fp)
+    cross_list[['ph_geno']] <- ph_geno
   }
   
   # crossover locations
@@ -467,19 +485,21 @@ save_rds <- function(qtl2_dir, sample_type, results_dir) {
   if (!file.exists(pos_fp)) {
     print('location crossover file does not exist, running calculations')
     pos <- locate_xo(ginf, map) 
+    cross_list[['pos']] <- pos
     print('saving location crossover file')
     saveRDS(pos, file = pos_fp)
   } else {
     print('location crossover file exists, reading in file')
     pos <- readRDS(pos_fp)
+    cross_list[['pos']] <- pos
   }
   
 
-  return(rds_dir)
+  return(cross_list)
 }
 
-rds_loop <- function(samples_for_rds, config, results_dir) {
-  config_temp <- data.frame()
+rds_loop <- function(samples_for_rds, config, results_dir, rds_dir, num_chr) {
+  list_result_all <- list()
   for (sample in samples_for_rds) {
     print(sample)
     sample_config <- config[array_type == sample]
@@ -487,9 +507,238 @@ rds_loop <- function(samples_for_rds, config, results_dir) {
     # according directories
     data_dir <- file.path(root, sample_config$data_dir)
     qtl2_dir <- file.path(root, sample_config$qtl2_dir)
+    cross_list <- save_rds(rds_dir, qtl2_dir, sample, results_dir)
     
-    sample_config$rds_dir <- save_rds(qtl2_dir, sample, results_dir)
-    config_temp <- rbind(sample_config, config_temp)
+    summary_df <- fread(paste0(data_dir, '/', sample, '_summary.csv'))
+    cross_list[['summary']] <- summary_df
+    cross_list[['data_dir']] <- data_dir
+    
+    founder_all_codes <- colnames(cross_list[['pr']]$`X`)
+    
+    ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_codes, cross = cross_list[['cross']])
+    cross_list[['ginf_haploqa']] <- ginf_haploqa
+    
+    ph_geno_haploqa <- guess_phase_sim(ginf_haploqa, cross_list[['cross']], rds_dir, sample)
+    cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
+    
+    list_result_all[[sample]] <- cross_list
   } 
-  return(config_temp)
+  
+  
+  return(list_result_all)
 }
+
+
+make_cross <- function(crosstype, chromosomes, df, x_only) {
+  attr_chr <- setNames(num_chr == 'X', chromosomes)
+  if(x_only == T) {
+    attr(df, "is_x_chr") <- attr_chr
+  } else {
+    attr(df, "crosstype") <- crosstype
+    attr(df, "alleles") <- c("A", "B", "C", "D", "E", "F", "G", "H")
+    attr_chr <- setNames(num_chr == 'X', chromosomes)
+    attr(df, "is_x_chr") <- attr_chr
+    attr(df, "class") <- c('viterbi', 'list')
+  }
+  return(df)
+}
+
+
+shiny_viz_input <- function(sample_type, rds_dir) {
+  phased_geno_comp_list <- list()
+  map <- readRDS(paste0(rds_dir, '/map_', sample_type, '.rds')) # should share the same map
+  ph_geno_haplo <- readRDS(paste0(rds_dir, '/ph_geno_haploqa_', sample_type, '.rds'))
+  ph_geno_qtl2 <- readRDS(paste0(rds_dir, '/ph_geno_', sample_type, '.rds'))
+  phased_geno_comp_list[['haplo']] <- ph_geno_haplo
+  phased_geno_comp_list[['qtl2']] <- ph_geno_qtl2
+  phased_geno_comp_list[['map']] <- map
+  
+  return(phased_geno_comp_list)
+}
+
+
+maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_codes, cross) {
+  ## look-up tables
+  founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
+  founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
+
+  all_map_codes <- seq(1:length(founder_all_codes))
+  founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
+  founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+  
+  
+  df_all <- get_haplotypes(summary_df, data_dir)
+  df_test <- df_all %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
+  df_test[,c(3,4)] <- as.data.frame(apply(df_test[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
+  df_test$haplotype <- paste(df_test$haplotype2, df_test$haplotype1, sep='')
+  
+  haploqa_maxmarg <- df_test %>% select(sample_id, snp_id, chromosome, haplotype)
+  
+  haploqa_maxmarg[,4] <- lapply(haploqa_maxmarg[,4], function(col) {
+    rev_col = stri_reverse(col)
+    ifelse(rev_col %in% founder_all_codes, rev_col, col)
+  })
+  
+  haploqa_maxmarg[,4] <- as.data.frame(apply(haploqa_maxmarg[,c(4)], 2, function(x) founder_all_lookup[x]))
+  
+  ## save per chromosome
+  ginf_haploqa <- list()
+  for (i in num_chr) {
+    #i <- 'X'
+    print(i)
+    df <- haploqa_maxmarg %>% filter(chromosome == i) %>% dcast(sample_id ~ snp_id, value.var = 'haplotype') %>% as.data.frame()
+    rownames(df) <- df$sample_id
+    
+    df <- df %>% select(-c(sample_id)) %>% as.matrix()
+    
+    col_order <- names(cross$gmap[[i]])
+    df <- df[,col_order]
+    ginf_haploqa[[i]] <- df
+  }
+  
+  ginf_haploqa <- make_cross('genail8', num_chr, ginf_haploqa, x_only = F)
+  
+  return(ginf_haploqa)
+}
+
+guess_phase_sim <- function(ginf_haploqa, cross, rds_dir, sample_type) {
+  ph_geno_haploqa <- guess_phase(cross, ginf_haploqa)
+  # save this separately for easy shiny input
+  saveRDS(ph_geno_haploqa, paste0(rds_dir, '/ph_geno_haploqa_', sample_type,'.rds'))
+  return(ph_geno_haploqa)
+}
+
+
+location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
+  x_loc_diff <- list()
+  for (chr in num_chr) {
+    print(chr)
+    pos_h_chr <- pos_haploqa_cc[[chr]]
+    pos_chr <- pos_qtl2_cc[[chr]]
+    nmar_h <- sapply(pos_h_chr, length)
+    nmar <- sapply(pos_chr, length) # none has the same length...
+    #x_loc_diff[[chr]] <- list()
+    for (i in seq(1:length(pos_chr))) {
+      x <- unlist(pos_h_chr[i])
+      y <- unlist(pos_chr[i])
+      if (length(x) > length(y)) {
+        df <- apply(abs(outer(x, y, '-')), 2, min)
+      }
+      if (length(x) < length(y)) {
+        df <- apply(abs(outer(y, x, '-')), 2, min)
+      }
+      x_loc_diff[[chr]][[i]]<- df
+    }
+  }
+  return(x_loc_diff)
+}
+
+
+err_comp <- function(pr, map, num_chr) {
+  ### have this take sample ID instead
+  for (chr in num_chr) {
+    #chr <- 1
+    print(chr)
+    err <- (1 - apply(pr[[chr]], c(1,3), max)) %>% t() %>% as.data.frame()
+    err$marker <- rownames(err)
+    err_map <- map[[chr]] %>% as.data.frame() %>% rename(pos = '.')
+    err_map$marker <- rownames(err_map)
+    
+    err_chr <- merge(err, err_map, by = 'marker')
+    df <- err_chr[,c(2, ncol(err_chr))]
+    # facet wrap each chromosome
+    plot <- ggplot(df) + aes(x = df[,2], y = df[,1]) + geom_line() + xlab('pos') + ylab(names(df)[1])
+    
+    print(plot)
+  }
+  return(df)
+}
+
+comp_df_int <- function(ginf, lookup_table, map_chr) {
+  df <- as.data.frame(ginf[[chr]])
+  df_chr <- apply(df, 2, function(x) founder_lookup_table[x]) # column level
+  rownames(df_chr) <- rownames(df)
+  df_chr <- as.data.frame(t(df_chr))
+  df_chr$marker <- rownames(df_chr)
+  df_chr_comp <- merge(df_chr, map_chr, by = 'marker')
+  
+  df_comp <- df_chr_comp[1:(ncol(df_chr_comp))] %>% select(-c(marker))
+  
+  return(df_comp)
+}
+
+genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_table, num_chr, file_gen) {
+  comp_matrix <- list()
+  for (chr in num_chr) {
+    ## qtl2
+    chr <- '1'
+    print(chr)
+    map_chr <- as.data.frame(map[[chr]]) %>% rename('pos' = 'map[[chr]]')
+    map_chr$marker <- rownames(map_chr)
+
+    haploqa_comp <- comp_df_int(ginf_haploqa, founder_lookup_table, map_chr)
+    qtl2_comp <- comp_df_int(ginf_qtl2, founder_lookup_table, map_chr)
+    
+    ### loop through each matching column within both dataframes
+    result_df <- data.frame()
+    for (col in seq(1:(ncol(qtl2_comp)-1))) {
+      #print(col)
+      df_match <- data.frame('qtl2_ind' = qtl2_comp[,col], 'haploqa_ind' = haploqa_comp[,col])
+      t1 <- dcast(df_match, qtl2_ind ~ haploqa_ind, value.var = 'haploqa_ind', fun.aggregate = length)
+      result_df <- bind_rows(result_df, t1) %>% group_by(qtl2_ind) %>% summarise(across(everything(), ~ sum(.x, na.rm = TRUE))) %>% as.data.frame()
+    }
+    
+    result_df <- result_df %>% rename(geno_code = qtl2_ind) %>%
+      select(geno_code, AA, BB, CC, DD, EE, FF, GG, HH, sort(names(.)))
+    
+    comp_matrix[[chr]] <- result_df
+    
+    if(file_gen == T) {
+      comp_fp <- file.path(root, 'geno_comp_results')
+      dir.create(comp_fp, showWarnings = FALSE) 
+      write.csv(result_df, paste0(comp_fp, '/geno_comp_matrix_', chr, '.csv'), row.names = F)
+    }
+  }
+  return(comp_matrix)
+}
+
+
+get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr) {
+  haploqa_comp <- comp_df_int(ginf_haploqa, founder_lookup_table, map_chr)
+  qtl2_comp <- comp_df_int(ginf_qtl2, founder_lookup_table, map_chr)
+  
+  for (chr in num_chr) {
+    chr_pct <- c()
+    print(chr)
+    for (ind in seq(1:(ncol(qtl2_comp)-1))) {
+      #ind <- 1
+      #ind_index <- ind+1
+      ind_qtl2 <- qtl2_comp[,ind]
+      ind_haplo <- haploqa_comp[,ind]
+      diff <- data.frame('qtl2' = ind_qtl2, 'haploqa' = ind_haplo, 'pos' = qtl2_comp$pos)
+      diff <- diff %>% arrange(pos) %>% filter(qtl2 != haploqa)
+      #write.csv(diff, paste0(comp_dir, '/diff_ind_', ind, '_chr_', chr, '.csv'), row.names = F)
+      
+      diff_pct <- +(!((haploqa_comp[1:(ncol(haploqa_comp)-1)] == qtl2_comp[1:(ncol(qtl2_comp)-1)]) * 1))
+      ind_df <- as.data.frame(diff_pct[,ind])
+      pct <- as.numeric(colSums(ind_df) / nrow(ind_df))
+      chr_pct <- c(chr_pct, pct)
+    }
+    
+    chr_diff <- data.frame('individuals' = colnames(qtl2_comp[1:(ncol(qtl2_comp)-1)]), 'genome_pct_diff' = chr_pct)
+    chr_diff$chr <- chr
+    chr_diff$ind <- seq(1:(ncol(qtl2_comp)-1))
+    
+    het_df <- summary_df %>% select(ID, `% Het. Calls`) %>% rename(individuals = ID, het_pct = '% Het. Calls')
+    plot_diff <- merge(chr_diff, het_df, by = 'individuals')
+    plot_diff$het_pct <- as.numeric(gsub("%", "", plot_diff$het_pct)) / 100
+    # histogram 
+    ggplot(plot_diff) + aes(x = genome_pct_diff, y = het_pct) + geom_point()
+    ggplot(plot_diff, aes(x=genome_pct_diff)) + geom_histogram(binwidth = .01)
+    
+    #write.csv(chr_diff, paste0(results_dir, '/pct_diff_chr_', chr, '.csv'), row.names = F)
+  }
+  return(chr_pct)
+}
+
+
