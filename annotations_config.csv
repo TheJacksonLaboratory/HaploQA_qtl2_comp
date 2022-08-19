@@ -1,5 +1,6 @@
-array_type,annot_file,dict_file,data_dir,qtl2_dir
-CC,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_cc_gm,cc_qtl2_genail
-GigaMUGA,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,,
-MiniMUGA,mini_uwisc_v1.csv,mini_uwisc_dict_v1.csv,,
-DO,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_do,do_qtl2_genail
+array_type,annot_file,dict_file,data_dir,qtl2_dir,marker_type,url
+CC,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_cc_gm,cc_qtl2_genail,GigaMUGA,http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html
+GigaMUGA,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,,,GigaMUGA,
+MiniMUGA,mini_uwisc_v1.csv,mini_uwisc_dict_v1.csv,,,MiniMUGA,
+DO,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_do,do_qtl2_genail,GigaMUGA,http://haploqa-dev.jax.org/tag/J:DO.html
+BXD,gm_uwisc_v1.csv,gm_uwisc_dict_v1.csv,haploqa_bxd_f1,bxd_f3_qtl2_genail,GigaMUGA,http://haploqa-dev.jax.org/tag/BXD%20F3%20re-upload.html

@@ -23,9 +23,8 @@ ui <- fluidPage(
                  selectInput("individual", "Individual", choices = seq(1:total_ind), selected = 1),
                  uiOutput("chromosome")
     ),
-    mainPanel(fluidRow(column(width = 6, plotOutput('genoplot_qtl2', width = '100%', height = '600px')), 
-                       column(width = 6, plotOutput('genoplot_haploqa', width = '100%', height = '600px'))) 
-    ))
+    mainPanel(plotOutput('genoplot', width = '100%', height = '800px'))
+    )
 )
 
 server <- function(input, output, session) {
@@ -34,23 +33,21 @@ server <- function(input, output, session) {
     if(input$select=="Diversity Outbred"){
       individual <- as.numeric(input$individual)
       print(individual)
-      output$genoplot_qtl2 <- renderPlot({
-        plot_onegeno(phased_geno_comp_do[['qtl2']], phased_geno_comp_do[['map']], ind = individual, shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', individual)) 
+      output$genoplot <- renderPlot({
+        plot_onegeno_test(phased_geno_comp_do[['qtl2']], phased_geno_comp_do[['haplo']], phased_geno_comp_do[['map']], ind = individual, 
+                          shift = TRUE, main = paste0('Geno-wide genotypes of individual ', individual),
+                          sub = 'Left - qtl2, Right - HaploQA') 
       })
       
-      output$genoplot_haploqa <- renderPlot({
-        plot_onegeno(phased_geno_comp_do[['haplo']], phased_geno_comp_do[['map']], ind = individual, shift = TRUE, main = paste0('haploqa - Geno-wide genotypes of individual ', individual)) 
-      })
     } else if (input$select=="Collaborative Cross") {
       individual <- as.numeric(input$individual)
       
-      output$genoplot_qtl2 <- renderPlot({
-        plot_onegeno(phased_geno_comp_cc[['qtl2']], phased_geno_comp_cc[['map']], ind = individual, shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', individual)) 
+      output$genoplot <- renderPlot({
+        plot_onegeno_test(phased_geno_comp_cc[['qtl2']], phased_geno_comp_cc[['haplo']], phased_geno_comp_cc[['map']], ind = individual, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', individual),
+                          sub = 'Left - qtl2, Right - HaploQA') 
       })
       
-      output$genoplot_haploqa <- renderPlot({
-        plot_onegeno(phased_geno_comp_cc[['haplo']], phased_geno_comp_cc[['map']], ind = individual, shift = TRUE, main = paste0('haploqa - Geno-wide genotypes of individual ', individual)) 
-      })
     }
   })
 }

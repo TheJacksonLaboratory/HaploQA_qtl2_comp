@@ -10,7 +10,7 @@ root <- dirname(getSourceEditorContext()$path)
 #
 # @return sum_table (data.frame) - table as shown on HaploQA sample website
 # columns of sum_table: ID (sample IDs), secondary ID, Haplotype Candidate (T/F), Strain Name, Sex, % Het Calls, % Hom Calls, % No Call, % Concordance, Sample filepath
-sample_summary_scrape <- function(html_file, url_list) {
+sample_summary_scrape <- function(html_file, url_list, marker_type) {
   # convert into table
   html_table <- html_file %>% html_nodes(".table") %>% html_table()
   sum_table <- html_table[[1]][-1] # remove first column, as it's blank
@@ -22,7 +22,9 @@ sample_summary_scrape <- function(html_file, url_list) {
     separate(`ID (Secondary IDs)`, c("ID", "Secondary IDs"), "\\(")
   sum_table$`Secondary IDs` <- gsub("\\)", "", sum_table$`Secondary IDs`) #remove parentheses
   sum_table$`Sample Filepath` <- url_list
-  sum_table <- sum_table[sum_table$Platform == 'GigaMUGA',]
+  if (!missing(marker_type)) {
+    sum_table <- sum_table[sum_table$Platform == marker_type,]
+  }
   return(sum_table)
 }
 
@@ -147,6 +149,13 @@ qtl2_pheno <- function(list_pheno, df) {
 # @return df_covar (list) - phenotype covariate data in qtl2 required format
 qtl2_cov <- function(df_raw, split_level, df, plot_type) { # list of unique sample ids instead of df
   split_level <- as.numeric(split_level) # make sure it's a number
+  if (split_level > 1) {
+    warning('Split level value entered is largrer than 1. Dividing by 100 to get decimal percentage value')
+    split_level <- as.numeric(split_level / 100)
+    print(paste0('splitting genders at ', split_level))
+  } else {
+    print(paste0('splitting genders at ', split_level))
+  }
   ### if 'x' and 'y' both here, merge and use scatterplot
   # use assert to check if x and y chromosomes both exist
   df_cov_all_xy <- df_raw %>% 
@@ -176,10 +185,10 @@ qtl2_cov <- function(df_raw, split_level, df, plot_type) { # list of unique samp
   print('please see plot for gender splitting and adjust accordingly')
   print(plot)
   # split genders
-  females_list <- plot_all[plot_all$NC_Y > split_level,]$sample_id
+  females_list <- plot_all[plot_all$NC_Y > split_level,]$sample_id # high no call on Y - females
   males_list <- plot_all[plot_all$NC_Y < split_level,]$sample_id
   # create new column
-  df_cov_all <- df %>% select(sample_id, Sex)
+  df_cov_all <- df %>% select(sample_id, Sex) %>% unique()
   df_cov_all$calc_sex <- NA
   # calculated gender
   df_cov_all$calc_sex[df_cov_all$sample_id %in% females_list] <- 'female'
@@ -235,12 +244,12 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
 #
 # @return founders_total (data.frame) - cross info data with sample IDs and mapped strain info for qtl2 input
 # columns of founders_total: id, A, B, C, D, E, F, G, H
-qtl2_ci <- function(summary_df) {
+qtl2_ci <- function(summary_df, ngen) {
   # join with summary table and CC file in karl's github
   ### if no founder info, filter out.
   # match the strain names with the cc cross info csv
   ci_sum <- summary_df %>% select(`ID`) %>% unique() %>% rename(id = ID)
-  ci_sum$ngen <- 4
+  ci_sum$ngen <- ngen
   ci_sum[ ,c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H')] <- 1
   df_crossinfo <- ci_sum # read_cross does not allow NAs here
   
@@ -306,7 +315,7 @@ get_haplotypes <- function(summary_df, data_dir) {
 # @return file_output (list) - nested list containing all files necessary for qtl2 input
 # specifically: df_geno, df_gmap, df_pmap, df_pheno, df_covar, df_foundergeno, df_crossinfo
 # see individual functions above for column names of each dataframe
-get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, list_pheno) {
+get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, list_pheno, ngen) {
   # list container to store outputs
   file_output <- list()
   
@@ -396,7 +405,7 @@ get_qtl2_input <- function(data_dir, sample_type, qtl2_output_dir, summary_df, l
   print('founder geno data done')
   
   # cross info
-  df_crossinfo <- qtl2_ci(summary_df)
+  df_crossinfo <- qtl2_ci(summary_df, ngen)
   # store in output
   file_output[[7]] <- df_crossinfo 
   print('cross info data done')
@@ -416,7 +425,8 @@ sort_chr <- function(df, sort_order) {
 }
 
 ## if rds file don't exist for the sample type, read cross
-save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir) {
+save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir) {
+  print(sample_type)
   # check if control file exist
   control_fp <- paste0(qtl2_dir, '/test.json')
   print(control_fp)
@@ -494,39 +504,23 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir) {
     cross_list[['pos']] <- pos
   }
   
+  # get summary file
+  summary_df <- fread(paste0(data_dir, '/', sample_type, '_summary.csv'))
+  cross_list[['summary']] <- summary_df
+  
+  cross_list[['data_dir']] <- data_dir
+  
+  founder_all_codes <- colnames(cross_list[['pr']]$`X`)
+  
+  ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_codes, cross = cross_list[['cross']], qtl2_dir)
+  cross_list[['ginf_haploqa']] <- ginf_haploqa
+  
+  ph_geno_haploqa <- guess_phase_sim(ginf_haploqa, cross_list[['cross']], rds_dir, sample_type)
+  cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
 
   return(cross_list)
 }
 
-rds_loop <- function(samples_for_rds, config, results_dir, rds_dir, num_chr) {
-  list_result_all <- list()
-  for (sample in samples_for_rds) {
-    print(sample)
-    sample_config <- config[array_type == sample]
-    
-    # according directories
-    data_dir <- file.path(root, sample_config$data_dir)
-    qtl2_dir <- file.path(root, sample_config$qtl2_dir)
-    cross_list <- save_rds(rds_dir, qtl2_dir, sample, results_dir)
-    
-    summary_df <- fread(paste0(data_dir, '/', sample, '_summary.csv'))
-    cross_list[['summary']] <- summary_df
-    cross_list[['data_dir']] <- data_dir
-    
-    founder_all_codes <- colnames(cross_list[['pr']]$`X`)
-    
-    ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_codes, cross = cross_list[['cross']])
-    cross_list[['ginf_haploqa']] <- ginf_haploqa
-    
-    ph_geno_haploqa <- guess_phase_sim(ginf_haploqa, cross_list[['cross']], rds_dir, sample)
-    cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
-    
-    list_result_all[[sample]] <- cross_list
-  } 
-  
-  
-  return(list_result_all)
-}
 
 
 make_cross <- function(crosstype, chromosomes, df, x_only) {
@@ -557,10 +551,12 @@ shiny_viz_input <- function(sample_type, rds_dir) {
 }
 
 
-maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_codes, cross) {
+maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_codes, cross, qtl2_dir) {
   ## look-up tables
   founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
   founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
+  
+  df_cov <- fread(file.path(qtl2_dir, 'test_covar.csv')) %>% rename('sample_id' = 'id')
 
   all_map_codes <- seq(1:length(founder_all_codes))
   founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
@@ -570,6 +566,10 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_codes, cross)
   df_all <- get_haplotypes(summary_df, data_dir)
   df_test <- df_all %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
   df_test[,c(3,4)] <- as.data.frame(apply(df_test[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
+  df_test <- merge(df_test, df_cov, by = 'sample_id')
+  
+  df_test[(df_test$chromosome == 'X') & (df_test$Sex == 'male')]$haplotype2 <- 'Y'
+  
   df_test$haplotype <- paste(df_test$haplotype2, df_test$haplotype1, sep='')
   
   haploqa_maxmarg <- df_test %>% select(sample_id, snp_id, chromosome, haplotype)
@@ -578,6 +578,8 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_codes, cross)
     rev_col = stri_reverse(col)
     ifelse(rev_col %in% founder_all_codes, rev_col, col)
   })
+  
+  ### join sex into this df - for males, take first letter, then paste Y after it
   
   haploqa_maxmarg[,4] <- as.data.frame(apply(haploqa_maxmarg[,c(4)], 2, function(x) founder_all_lookup[x]))
   
@@ -613,8 +615,8 @@ location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
   x_loc_diff <- list()
   for (chr in num_chr) {
     print(chr)
-    pos_h_chr <- pos_haploqa_cc[[chr]]
-    pos_chr <- pos_qtl2_cc[[chr]]
+    pos_h_chr <- haploqa_pos[[chr]]
+    pos_chr <- qtl2_pos[[chr]]
     nmar_h <- sapply(pos_h_chr, length)
     nmar <- sapply(pos_chr, length) # none has the same length...
     #x_loc_diff[[chr]] <- list()
@@ -628,16 +630,17 @@ location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
         df <- apply(abs(outer(y, x, '-')), 2, min)
       }
       x_loc_diff[[chr]][[i]]<- df
-    }
+    } # make a histogram of some sort, 100 bins
   }
   return(x_loc_diff)
 }
 
 
-err_comp <- function(pr, map, num_chr) {
-  ### have this take sample ID instead
+err_comp <- function(pr, map, num_chr, results_dir, sample_type) {
+  pdf(paste0(results_dir, 'err_comp_plots_', sample_type, '.pdf'))
+  facet_all <- data.frame()
   for (chr in num_chr) {
-    #chr <- 1
+    #chr <- 2
     print(chr)
     err <- (1 - apply(pr[[chr]], c(1,3), max)) %>% t() %>% as.data.frame()
     err$marker <- rownames(err)
@@ -645,16 +648,32 @@ err_comp <- function(pr, map, num_chr) {
     err_map$marker <- rownames(err_map)
     
     err_chr <- merge(err, err_map, by = 'marker')
-    df <- err_chr[,c(2, ncol(err_chr))]
-    # facet wrap each chromosome
-    plot <- ggplot(df) + aes(x = df[,2], y = df[,1]) + geom_line() + xlab('pos') + ylab(names(df)[1])
     
-    print(plot)
+    for (col in seq(2,(ncol(err_chr)-2))) {
+      print(col)
+      #col <- 2
+      df <- err_chr[,c(col, ncol(err_chr))]
+      df$sample <- colnames(df)[1]
+      colnames(df)[1] <- 'value'
+      df$chromosome <- chr
+      #plot <- ggplot(df) + aes(x = df[,2], y = df[,1]) + geom_line() + xlab('pos') + ylab(names(df)[1])
+      #print(plot)
+      facet_all <- rbind(facet_all, df)
+    }
   }
-  return(df)
+    
+    for(sample in unique(facet_all$sample)) {
+      #sample <- '35V'
+      sample_df <- facet_all[facet_all$sample == sample,]
+      plot <- ggplot(sample_df) + aes(x = pos, y = value) + geom_line() + facet_wrap(sample~chromosome)
+      print(plot)
+    }
+  dev.off()
+  
+  #return(df)
 }
 
-comp_df_int <- function(ginf, lookup_table, map_chr) {
+comp_df_int <- function(chr, ginf, founder_lookup_table, map_chr) {
   df <- as.data.frame(ginf[[chr]])
   df_chr <- apply(df, 2, function(x) founder_lookup_table[x]) # column level
   rownames(df_chr) <- rownames(df)
@@ -667,17 +686,17 @@ comp_df_int <- function(ginf, lookup_table, map_chr) {
   return(df_comp)
 }
 
-genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_table, num_chr, file_gen) {
+# do this for each strain
+genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_table, num_chr, file_gen, sample_type) {
   comp_matrix <- list()
   for (chr in num_chr) {
     ## qtl2
-    chr <- '1'
     print(chr)
     map_chr <- as.data.frame(map[[chr]]) %>% rename('pos' = 'map[[chr]]')
     map_chr$marker <- rownames(map_chr)
 
-    haploqa_comp <- comp_df_int(ginf_haploqa, founder_lookup_table, map_chr)
-    qtl2_comp <- comp_df_int(ginf_qtl2, founder_lookup_table, map_chr)
+    haploqa_comp <- comp_df_int(chr, ginf_haploqa, founder_lookup_table, map_chr)
+    qtl2_comp <- comp_df_int(chr, ginf_qtl2, founder_lookup_table, map_chr)
     
     ### loop through each matching column within both dataframes
     result_df <- data.frame()
@@ -694,7 +713,7 @@ genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_ta
     comp_matrix[[chr]] <- result_df
     
     if(file_gen == T) {
-      comp_fp <- file.path(root, 'geno_comp_results')
+      comp_fp <- paste0(root, '/geno_comp_results_', sample_type)
       dir.create(comp_fp, showWarnings = FALSE) 
       write.csv(result_df, paste0(comp_fp, '/geno_comp_matrix_', chr, '.csv'), row.names = F)
     }
@@ -703,7 +722,8 @@ genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_ta
 }
 
 
-get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr) {
+get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr, founder_lookup_table) {
+  
   haploqa_comp <- comp_df_int(ginf_haploqa, founder_lookup_table, map_chr)
   qtl2_comp <- comp_df_int(ginf_qtl2, founder_lookup_table, map_chr)
   
@@ -740,5 +760,460 @@ get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr) {
   }
   return(chr_pct)
 }
+
+get_sample_result <- function(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen, samples_gen, control_file, num_chr, ngen) {
+  
+  config <- fread(paste0(root, '/annotations_config.csv'))
+  
+  ### Environment
+  config_sample <- config[config$array_type == sample_type]
+  marker_type <- config_sample$marker_type
+  # data output directory
+  data_dir <- file.path(root, config_sample$data_dir)
+  dir.create(data_dir, showWarnings = FALSE) 
+  
+  ## create a data directory for qtl2 input data
+  qtl2_dir <- file.path(root, config_sample$qtl2_dir) # name of desired output folder
+  # create if folder not exist
+  dir.create(qtl2_dir, showWarnings = FALSE)
+  
+  # filepaths to save any rds file
+  rds_dir <- file.path(results_dir, 'RDS')
+  dir.create(rds_dir, showWarnings = FALSE)
+  
+  ### control file
+  control_fp <- paste0(qtl2_dir, '/test.json')
+  if (file.exists(control_fp) == FALSE) {
+    file.create(control_fp)
+  }
+  
+  ## summary file
+  summary_df_fp <- paste0(data_dir, '/', sample_type, '_summary.csv')
+  
+  ###############################################################################
+  ### Part 1 - get results from HaploQA
+  # set main URL domain
+  url_domain <- 'http://haploqa-dev.jax.org/' 
+  #### html file prep
+  # read html file
+  haploqa_html <- read_html(sample_url)
+  
+  # extract information from html file
+  html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+  url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+  
+  #### implementations
+  # summary table
+  if (!file.exists(summary_df_fp)) {
+    print(paste0('Working on summary file:'))
+    summary_df <- sample_summary_scrape(haploqa_html, url_list, marker_type)
+    print('Writing to directory')
+    write.csv(summary_df, paste0(data_dir, '/', sample_type, '_summary.csv'), row.names = FALSE)
+    
+  } else {
+    summary_df <- fread(summary_df_fp)
+  }
+  
+  # list of urls to generate samples from
+  url_ind <- unique(summary_df$`Sample Filepath`)
+  #url_ind <- url_ind[!url_ind %in% exclude_list]
+  
+  if(samples_gen == T) {
+    # individual samples
+    inc = 0
+    for (url in url_ind) {
+      inc = inc + 1 # increment
+      file <- sample_individual_scrape(url, url_domain)
+      print(paste0('Working on file ', inc, '/', length(url_ind), ': ', file))
+      sample_df_save <- as.data.frame(content(GET(file)))
+      print('Writing to directory')
+      file_name <- unlist(strsplit(file, '/'))[6]
+      GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
+        
+      
+    }
+  }
+  
+  ### Part 2 - convert results to qtl2 input format
+  # implement function
+  if (qtl2_file_gen == T) {
+    file_output <- get_qtl2_input(data_dir, sample_type, qtl2_dir, summary_df, list_pheno, ngen)
+    # unpack
+    df_geno <- file_output[[1]]
+    df_gmap <- file_output[[2]]
+    df_gmap <- sort_chr(df_gmap, c((1:19),"X")) # put chromosomes in order
+    df_pmap <- file_output[[3]]
+    df_pmap <- sort_chr(df_pmap, c((1:19),"X"))
+    df_pheno <- file_output[[4]]
+    df_covar <- file_output[[5]]
+    df_foundergeno <- file_output[[6]] # with strain id metadata
+    df_crossinfo <- file_output[[7]]
+  
+    # write out files
+    write.csv(df_geno, paste0(qtl2_dir, '/test_geno.csv'), row.names = F)
+    write.csv(df_gmap, paste0(qtl2_dir, '/test_gmap.csv'), row.names = F)
+    write.csv(df_pmap, paste0(qtl2_dir, '/test_pmap.csv'), row.names = F)
+    write.csv(df_pheno, paste0(qtl2_dir, '/test_pheno.csv'), row.names = F)
+    write.csv(df_covar, paste0(qtl2_dir, '/test_covar.csv'), row.names = F)
+    write.csv(df_foundergeno, paste0(qtl2_dir, '/test_foundergeno.csv'), row.names = F)
+    write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
+    writeLines(control_file, control_fp)
+  }
+  
+  ### get results for the sample
+  results <- save_rds(rds_dir, qtl2_dir, sample_type, results_dir, data_dir)
+  
+  return(results)
+}
+
+
+
+plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
+                              col=NULL, na_col="white",
+                              swap_axes=FALSE,
+                              border="black", shift=FALSE,
+                              chrwidth=0.5, ...) {
+  
+  # ignore class of geno object
+  geno <- unclass(geno)
+  geno1 <- unclass(geno1)
+  
+  # drop all but the target individual
+  if(length(ind)>1) {
+    ind <- ind[1]
+    warning("Only using the first individual")
+  }
+  
+  # separate mom and dad
+  for(i in seq_along(geno)) {
+    geno[[i]] <- geno[[i]][ind,,,drop=FALSE]
+    geno1[[i]] <- geno1[[i]][ind,,,drop=FALSE]
+    
+  }
+  
+  # always start at 0
+  map <- lapply(map, function(a) a-min(a,na.rm=TRUE))
+  
+  plot_onegeno_internal <-
+    function(geno, map, col=NULL, na_col="white",
+             swap_axes=FALSE,
+             border="black", bgcolor="gray90",
+             chrwidth=0.5,
+             xlab=NULL, ylab=NULL,
+             xlim=NULL, ylim=NULL, las=1, xaxs=NULL, yaxs=NULL,
+             mgp.x=c(2.6,0.5,0), mgp.y=c(2.6,0.5,0), mgp=NULL,
+             hlines=NULL, hlines_col="white", hlines_lwd=1, hlines_lty=1,
+             vlines=NULL, vlines_col="gray80", vlines_lwd=1, vlines_lty=1,
+             ...)
+    {
+      dots <- list(...)
+      
+      nchr <- length(map)
+      
+      # margin parameters
+      if(!is.null(mgp)) mgp.x <- mgp.y <- mgp
+      
+      if(is.null(xlab)) xlab <- "Chromosome"
+      if(is.null(ylab)) ylab <- "Position"
+      
+      if(is.null(xlim)) xlim <- c(0.5, 52)
+      if(is.null(ylim)) ylim <- rev(range(unlist(map), na.rm=TRUE))
+      
+      if(is.null(hlines)) hlines <- pretty(ylim)
+      if(is.null(vlines)) vlines <- seq_len(52)
+      
+      if(is.null(xaxs)) xaxs <- "i"
+      if(is.null(yaxs)) yaxs <- "r"
+      
+      # blank canvas
+      plot(0, 0, type="n", xlab="", ylab="",
+           xaxs=xaxs, yaxs=yaxs,
+           xaxt="n", yaxt="n", xlim=xlim, ylim=ylim, ...)
+      u <- par("usr")
+      if(!is.null(bgcolor))
+        rect(u[1], u[3], u[2], u[4], col=bgcolor, border=NA)
+      
+      # include axis labels?
+      if(is.null(dots$xaxt)) dots$xaxt <- par("xaxt")
+      if(is.null(dots$yaxt)) dots$yaxt <- par("yaxt")
+      
+      # add x axis unless par(xaxt="n")
+      if(dots$xaxt != "n") {
+        odd <- seq(1, nchr, by=2)
+        axis(side=1, at=(odd*2.5), names(map)[odd],
+             mgp=mgp.x, las=las, tick=FALSE)
+        if(nchr > 1) {
+          even <- seq(2, nchr, by=2)
+          axis(side=1, at=(even*2.5), names(map)[even],
+               mgp=mgp.x, las=las, tick=FALSE)
+        }
+      }
+      # add y axis unless par(yaxt="n")
+      if(dots$yaxt != "n") {
+        axis(side=2, at=pretty(ylim), mgp=mgp.y, las=las, tick=FALSE)
+      }
+      
+      
+      # grid lines
+      if(!(length(vlines)==1 && is.na(vlines))) {
+        abline(v=vlines, col=vlines_col, lwd=vlines_lwd, lty=vlines_lty)
+      }
+      if(!(length(hlines)==1 && is.na(hlines))) {
+        abline(h=hlines, col=hlines_col, lwd=hlines_lwd, lty=hlines_lty)
+      }
+      
+      # x and y axis labels
+      title(xlab=xlab, mgp=mgp.x)
+      title(ylab=ylab, mgp=mgp.y)
+      
+      max_geno <- max(unlist(geno), na.rm=TRUE)
+      if(is.null(col)) {
+        if(max_geno <= 8) {
+          col <- qtl2::CCcolors
+        }
+        else {
+          warning("With ", max_geno, " genotypes, you need to provide the vector of colors; recycling some")
+          col <- rep(qtl2::CCcolors, max_geno)
+        }
+      }
+      else if(max_geno > length(col)) {
+        warning("not enough colors; recycling them")
+        col <- rep(col, max_geno)
+      }
+      ### chromosomes 1-19
+      inc <- 0
+      
+      for(i in seq_len(nchr-1)) {
+        #i <- 19
+        g <- geno[[i]]
+        g1 <- geno1[[i]]
+        
+        # if completely missing the second chr but not the first, treat as if we have just the one
+        #   (this is a kludge to deal with males on X chr;
+        #    really should use is_x_chr and is_female but we don't have it)
+        this_chrwidth <- chrwidth
+        if(!is.matrix(g) && !all(is.na(g[,,1])) && all(is.na(g[,,2]))) { # if g needs to be converted, g1 should be too
+          g <- rbind(g[,,1]) # make it a row matrix
+          g1 <- rbind(g1[,,1])
+          this_chrwidth <- this_chrwidth/2
+        }
+        ### dataframe - g
+        # rectangle shape
+        x_lower_left <- i+0.75+inc
+        x_higher_left <- (i+1.25+inc)-(this_chrwidth/2)
+        x_lower_right <- i+1.25+inc
+        x_higher_right <- (i+0.75+inc)+(this_chrwidth/2)
+        
+        rect(x_higher_left, min(map[[i]], na.rm=TRUE),
+             x_lower_left, max(map[[i]], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[[i]], na.rm=TRUE),
+             x_lower_right, max(map[[i]], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        # add geno colors
+        addgenorect(g[1,,1], map[[i]], x_higher_left,x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        addgenorect(g[1,,2], map[[i]], x_higher_right, x_lower_right,
+                    col=col, swap_axes=swap_axes)
+        # borders
+        rect(x_higher_left, min(map[[i]], na.rm=TRUE),
+             x_lower_left, max(map[[i]], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[[i]], na.rm=TRUE),
+             x_lower_right, max(map[[i]], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        
+        ### dataframe - g1
+        # rectangle shape
+        x_lower_left <- x_lower_left + 1
+        x_higher_left <- x_higher_left + 1
+        x_lower_right <-x_lower_right + 1
+        x_higher_right <- x_higher_right + 1
+        
+        rect(x_higher_left, min(map[[i]], na.rm=TRUE),
+             x_lower_left, max(map[[i]], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[[i]], na.rm=TRUE),
+             x_lower_right, max(map[[i]], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        # add geno colors
+        addgenorect(g1[1,,1], map[[i]], x_higher_left, x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        addgenorect(g1[1,,2], map[[i]], x_higher_right, x_lower_right,
+                    col=col, swap_axes=swap_axes)
+        # borders
+        rect(x_higher_left, min(map[[i]], na.rm=TRUE),
+             x_lower_left, max(map[[i]], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[[i]], na.rm=TRUE),
+             x_lower_right, max(map[[i]], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        inc <- inc + 1.5
+        
+        
+        
+      }
+      
+      ## plot x individually
+      g <- geno[['X']]
+      g1 <- geno1[['X']]
+      if(!is.matrix(g) && !all(is.na(g[,,1])) && all(is.na(g[,,2]))) { # if g needs to be converted, g1 should be too
+        g <- rbind(g[,,1]) # make it a row matrix
+        g1 <- rbind(g1[,,1])
+        this_chrwidth <- this_chrwidth/2
+      }
+      
+      inc <- inc + 1
+      
+      
+      if(is.matrix(g)) {
+        print('x has only one')
+        ### dataframe - g
+        x_lower_left <- i+0.75+inc
+        x_higher_left <- (i+1.25+inc)-(this_chrwidth/2)
+        x_lower_right <- i+1.25+inc
+        x_higher_right <- (i+0.75+inc)+(this_chrwidth/2)
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        addgenorect(g[1,], map[['X']], x_higher_left, x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        
+        ### dataframe - g1
+        x_lower_left <- x_lower_left + 1
+        x_higher_left <- x_higher_left + 1
+        x_lower_right <- x_lower_right + 1
+        x_higher_right <- x_higher_right + 1
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        addgenorect(g1[1,], map[['X']], x_higher_left, x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        
+        
+      } else {
+        # rectangle shape
+        x_lower_left <- i+0.75+inc
+        x_higher_left <- (i+1.25+inc)-(this_chrwidth/2)
+        x_lower_right <- i+1.25+inc
+        x_higher_right <- (i+0.75+inc)+(this_chrwidth/2)
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[['X']], na.rm=TRUE),
+             x_lower_right, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        # add geno colors
+        addgenorect(g[1,,1], map[['X']], x_higher_left,x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        addgenorect(g[1,,2], map[['X']], x_higher_right, x_lower_right,
+                    col=col, swap_axes=swap_axes)
+        # borders
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[['X']], na.rm=TRUE),
+             x_lower_right, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        
+        ### dataframe - g1
+        # rectangle shape
+        x_lower_left <- x_lower_left + 1
+        x_higher_left <- x_higher_left + 1
+        x_lower_right <-x_lower_right + 1
+        x_higher_right <- x_higher_right + 1
+        
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[['X']], na.rm=TRUE),
+             x_lower_right, max(map[['X']], na.rm=TRUE),
+             col=na_col, border=border, lend=1, ljoin=1)
+        
+        # add geno colors
+        addgenorect(g1[1,,1], map[['X']], x_higher_left, x_lower_left,
+                    col=col, swap_axes=swap_axes)
+        addgenorect(g1[1,,2], map[['X']], x_higher_right, x_lower_right,
+                    col=col, swap_axes=swap_axes)
+        # borders
+        rect(x_higher_left, min(map[['X']], na.rm=TRUE),
+             x_lower_left, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        rect(x_higher_right, min(map[['X']], na.rm=TRUE),
+             x_lower_right, max(map[['X']], na.rm=TRUE),
+             col=NULL, border=border, lend=1, ljoin=1)
+        
+      }
+      
+      
+      
+      
+      box()
+    }
+  
+  plot_onegeno_internal(geno, map, col=col, na_col=na_col,
+                        swap_axes=swap_axes, border=border,
+                        chrwidth=chrwidth, ...)
+  
+  
+}
+
+# add rectangles for the genotypes
+addgenorect <- function(geno, map, x1, x2, col, swap_axes=FALSE) {
+  intervals <- geno2intervals(geno, map)
+  if(is.null(intervals) || nrow(intervals) < 1) return(NULL)
+  
+  for(i in seq_len(nrow(intervals))) {
+    if(swap_axes) {
+      rect(intervals[i,1], x1,
+           intervals[i,2], x2,
+           col=col[intervals[i,3]],
+           border=NA, lend=1, ljoin=1)
+    } else{
+      rect(x1, intervals[i,1],
+           x2, intervals[i,2],
+           col=col[intervals[i,3]],
+           border=NA, lend=1, ljoin=1)
+    }
+  }
+}
+
+
+# convert vector of integer genotypes to intervals with common genotypes
+# (start, end, genotype)
+geno2intervals <- function(geno, map) {
+  if(all(is.na(geno))) return(NULL)
+  
+  stopifnot(length(geno) == length(map))
+  
+  # drop missing values
+  map <- map[!is.na(geno)]
+  geno <- geno[!is.na(geno)]
+  
+  d <- diff(geno)
+  xo_int <- which(d != 0)
+  
+  data.frame(lo=map[c(1,xo_int+1)],
+             hi=map[c(xo_int, length(map))],
+             geno=geno[c(xo_int, length(map))])
+  
+}
+
 
 

@@ -17,145 +17,37 @@ library(stats)
 library(ggplot2)
 library(stringr)
 library(stringi)
+library(lsa)
 
 
 # source the function script
 root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
 
-#### change the below params
-dir_name <- 'haploqa_do' # enter directory name
-sample_type <- 'DO' # CC/DO/MiniMUGA/GigaMUGA
-output_dir_name <- 'do_qtl2_genail'
+sample_type <- 'DO' # CC/DO/MiniMUGA/GigaMUGA/BXD
 list_pheno <- c('WBC', 'NEUT')
 
-#### Set toggles
-generate_summary <- TRUE # set to TRUE to generate summary table
-output_summary <- TRUE # set to TRUE to output summary table to data directory
-generate_sample_individuals <- TRUE # set to TRUE to generate individual sample data
-output_samples <- TRUE 
-qtl2_file_gen <- TRUE
+config <- fread(paste0(root, '/annotations_config.csv'))
+config_sample <- config[config$array_type == sample_type]
 
-
-### Environment
-# data output directory
-data_dir <- file.path(root, dir_name)
-dir.create(data_dir, showWarnings = FALSE) 
-
-## create a data directory for qtl2 input data
-qtl2_dir <- file.path(root, output_dir_name) # name of desired output folder
-# create if folder not exist
-dir.create(qtl2_dir, showWarnings = FALSE)
+sample_url <- config_sample$url
+ngen <- 3
 
 ## results directory
 results_dir <- file.path(root, 'results')
 dir.create(results_dir, showWarnings = FALSE) 
 
-### control file
-control_fp <- paste0(qtl2_dir, '/test.json')
-if (file.exists(control_fp) == FALSE) {
-  file.create(control_fp)
-}
+# filepaths to save any rds file
+rds_dir <- file.path(results_dir, 'RDS')
+dir.create(rds_dir, showWarnings = FALSE)
 
-
-###############################################################################
-### Part 1 - get results from HaploQA
-# set main URL domain
-url_domain <- 'http://haploqa-dev.jax.org/' 
-# target sample URL
-sample_url <- 'http://haploqa-dev.jax.org/tag/J:DO.html' # change to the URL of sample
-
-#### html file prep
-# read html file
-haploqa_html <- read_html(sample_url)
-
-# extract information from html file
-html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
-url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
-
-#### implementations
-# summary table
-if (generate_summary == TRUE) {
-  print(paste0('Working on summary file:'))
-  sum_df <- sample_summary_scrape(haploqa_html, url_list)
-  if (output_summary == TRUE) {
-    print('Writing to directory')
-    write.csv(sum_df, paste0(data_dir, '/', sample_type, '_summary.csv'), row.names = FALSE)
-  }
-}
-
-
-### TO-DO: URLs with recurring issues
-
-#skip_urls <- c('http://haploqa-dev.jax.org//sample/5f56294d183b6a06dabbe5ee.html', 
-#               'http://haploqa-dev.jax.org//sample/5f562977183b6a06dabbe60c.html',
-#               'http://haploqa-dev.jax.org//sample/5f562991183b6a06dabbe61f.html',
-#               'http://haploqa-dev.jax.org//sample/5696759d85b062edc4efbe7d.html',
-#               'http://haploqa-dev.jax.org//sample/569675b385b062edc4efbe8b.html',
-#               'http://haploqa-dev.jax.org//sample/569675b585b062edc4efbe8d.html',
-#               'http://haploqa-dev.jax.org//sample/569675e485b062edc4efbeab.html',
-#               'http://haploqa-dev.jax.org//sample/569675e785b062edc4efbead.html',
-#               'http://haploqa-dev.jax.org//sample/569675ee85b062edc4efbeb2.html',
-#               'http://haploqa-dev.jax.org//sample/5696761285b062edc4efbecc.html')
-
-
-# list of urls to generate samples from
-url_ind <- unique(sum_df$`Sample Filepath`)
-#url_ind <- url_ind[!url_ind %in% skip_urls]
-
-# individual samples
-inc = 0
-for (url in url_ind) {
-  inc = inc + 1 # increment
-  if (generate_sample_individuals == TRUE) {
-    file <- sample_individual_scrape(url, url_domain)
-    print(paste0('Working on file ', inc, '/', length(url_ind), ': ', file))
-    sample_df_save <- as.data.frame(content(GET(file)))
-    if (output_samples == TRUE) {
-      print('Writing to directory')
-      file_name <- unlist(strsplit(file, '/'))[6]
-      GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
-    }
-  }
-}
-
-# for testing - read the summary file if not regenerating above, as it's needed for below
-#summary_df <- fread(paste0(data_dir, '/DO_summary.csv'))
-
-### Part 2 - convert results to qtl2 input format
-
-# implement function
-if(qtl2_file_gen == TRUE) {
-  file_output <- get_qtl2_input(data_dir, sample_type, qtl2_dir, summary_df, list_pheno)
-}
-
-
-# unpack
-df_geno <- file_output[[1]]
-df_gmap <- file_output[[2]]
-df_gmap <- sort_chr(df_gmap, c((0:19),"X")) # put chromosomes in order
-df_pmap <- file_output[[3]]
-df_pmap <- sort_chr(df_pmap, c((0:19),"X"))
-df_pheno <- file_output[[4]]
-df_covar <- file_output[[5]]
-df_foundergeno <- file_output[[6]] # with strain id metadata
-df_crossinfo <- file_output[[7]]
-#df_crossinfo <- df_crossinfo %>% select(-strain_id) # read_cross only takes 8 columns
-
-if (qtl2_file_gen == TRUE) {
-  write.csv(df_geno, paste0(qtl2_dir, '/test_geno.csv'), row.names = F)
-  write.csv(df_gmap, paste0(qtl2_dir, '/test_gmap.csv'), row.names = F)
-  write.csv(df_pmap, paste0(qtl2_dir, '/test_pmap.csv'), row.names = F)
-  write.csv(df_pheno, paste0(qtl2_dir, '/test_pheno.csv'), row.names = F)
-  write.csv(df_covar, paste0(qtl2_dir, '/test_covar.csv'), row.names = F)
-  write.csv(df_foundergeno, paste0(qtl2_dir, '/test_foundergeno.csv'), row.names = F)
-  write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
-}
+qtl2_file_gen <- FALSE
+num_chr <- c((1:19),"X")
 
 ## text of control file
 control_file <- '{
   "description": "HaploQA data - qtl2 test run",
-  "crosstype": "genail8",
+  "crosstype": "genail2",
   "sep": ",",
   "na.strings": ["-", "NA"],
   "comment.char": "#",
@@ -184,12 +76,197 @@ control_file <- '{
   }
 }'
 
+### fix founder contributions
+# founder for bxd comes from https://haploqa.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html
+do_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, control_file, num_chr, ngen)
 
 
-# output to file
-if (qtl2_file_gen == TRUE) {
-  writeLines(control_file, control_fp)
+
+### 1. genoprob_to_alleleprob - condense into founder prob (save to rds)
+founder_all_codes <- colnames(do_results[['pr']]$`X`) # take the X chromosome - this one has everything
+all_map_codes <- seq(1:length(founder_all_codes))
+#founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
+founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+
+test_geno <- do_results[['ginf_haploqa']]
+do_qtl2_test <- genoprob_to_alleleprob(do_results[['pr']])
+map <- do_results[['map']]
+
+geno_align <- function(df) {
+  founder_codes <- LETTERS[seq(1,8)]
+  col_diff <- setdiff(founder_codes, colnames(df))
+  dum_array <- array(0, dim = c(nrow(df), length(col_diff)))
+  colnames(dum_array) <- col_diff
+  df <- cbind(df, dum_array)
+  df <- df[ ,founder_codes]
+  
+  return(df)
+}
+
+
+temp <- do_qtl2_test$`19`
+temp <- temp * temp
+
+temp_save <- temp
+
+temp <- apply(temp, c(1,3), sum)
+temp <- sqrt(temp)
+
+#do_haplo_test <- list()
+do_haplo_test <- list()
+for (i in num_chr) {
+  #i <- '19'
+  print(i)
+  df <- test_geno[[i]]
+  
+  do_haplo_test[[i]] <- array(dim = c(nrow(df), 8, ncol(df)))
+  rownames(do_haplo_test[[i]]) <- rownames(df)
+  colnames(do_haplo_test[[i]]) <- LETTERS[seq(1,8)]
+  for (col in seq(1, ncol(df))) {
+    #col <- 328
+    print(col)
+    
+    df_test <- data.frame(sample_id = rownames(df), col_val = df[,c(col)])
+    df_test[,2] <- as.data.frame(apply(df_test[c(2)], 2, function(x) founder_all_rev_lookup[x]))
+    df_test <- df_test %>% separate(col_val, c("allele1", "allele2"), sep=cumsum(c(1)))
+    
+    # haplo
+    a <- table(df_test[,c(1,2)])
+    b <- table(df_test[,c(1,3)])
+    
+    if(length(colnames(b)) < 8) {
+      b <- geno_align(b)
+    } 
+    if((length(colnames(a)) < 8)) {
+      a <- geno_align(a)
+    }
+    
+    haplo_comp <- (a + b) / 2
+    
+    do_haplo_test[[i]][,,col] <- haplo_comp
+    
+  }
+}
+
+saveRDS(do_haplo_test, paste0(rds_dir, 'haploqa_founder_prob_', sample_type, '.rds'))
+
+
+cos_sim_all <- list()
+for (i in num_chr) {
+  #i <- '1'
+  df <- test_geno[[i]]
+  map_i <- map[[i]]
+  print(i)
+  cos_sim_chr <- list()
+  for (col in seq(1, ncol(df))) {
+    #col <- 3
+    map_val <- as.numeric(map_i[col])
+    # qtl2
+    #print(col)
+    qtl2_comp <- do_qtl2_test[[i]][,,col]
+    ### plug the pre-calculated square roots
+    haplo_comp <- do_haplo_test[[i]][,,col]
+    
+    a = rowSums(qtl2_comp * haplo_comp)
+    b = (sqrt(rowSums(qtl2_comp * qtl2_comp))) * (sqrt(rowSums(haplo_comp * haplo_comp)))
+    
+    cos_sim_list = a/b
+
+    cos_marker_df <- data.frame(sample_id = rownames(haplo_comp), cos_sim = unlist(cos_sim_list), pos = map_val)
+    cos_marker_df$chromosome <- i
+    cos_sim_chr[[col]] <- as.data.table(cos_marker_df)
+  }
+  cos_sim_all[[i]] <- rbindlist(cos_sim_chr)
+}  
+
+cos_sim_all <- rbindlist(cos_sim_all)
+
+saveRDS(cos_sim_all, paste0(rds_dir, '/cos_sim_', sample_type, '.rds'))
+
+for (sample in unique(cos_sim_all$sample_id)) {
+  sample <- '6UY'
+  sample_df <- cos_sim_all[(cos_sim_all$sample_id == sample),]
+  sample_df$chromosome <- factor(sample_df$chromosome, num_chr)
+  ggplot(sample_df) + aes(x = pos, y = cos_sim) + geom_line() + ggtitle(paste0('Sample ID: ', sample)) + 
+    facet_wrap(.~chromosome)
+  
 }
 
 
 
+
+exclude_list <- c('http://haploqa-dev.jax.org//sample/595e3b183ac36a089e040c82.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b1a3ac36a089e040c83.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b1c3ac36a089e040c84.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b1f3ac36a089e040c86.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b243ac36a089e040c88.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b253ac36a089e040c89.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b273ac36a089e040c8a.html', 
+                  'http://haploqa-dev.jax.org//sample/595e3b2a3ac36a089e040c8b.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b2c3ac36a089e040c8c.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b303ac36a089e040c8e.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b323ac36a089e040c8f.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b333ac36a089e040c90.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b353ac36a089e040c91.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b3a3ac36a089e040c94.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b3d3ac36a089e040c96.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b3f3ac36a089e040c97.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b413ac36a089e040c98.html',
+                  'http://haploqa-dev.jax.org//sample/595e3b433ac36a089e040c99.html'
+                  )
+
+
+
+### Part 3 - haplotype reconstructions
+### CC
+cc_results <- save_rds(rds_dir, qtl2_dir, sample_type, results_dir, data_dir)
+
+
+
+# lookup tables
+founder_all_codes <- colnames(cc_results[['pr']]$`X`) # take the X chromosome - this one has everything
+all_map_codes <- seq(1:length(founder_all_codes))
+founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
+founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+
+## location crossover comparison
+pos_haploqa_cc <- locate_xo(cc_results[['ginf_haploqa']], cc_results[['map']])
+pos_qtl2_cc <- cc_results[['pos']]
+x_loc_diff <- location_xo_comp(pos_qtl2_cc, pos_haploqa_cc, num_chr)
+
+## error matrix
+err_comp(cc_results[['pr']], cc_results[['map']], num_chr, results_dir, sample_type)
+
+## genocode comparison matrix
+comp_matrix <- genocode_comp_matrix(cc_results[['map']], cc_results[['ginf']], cc_results[['ginf_haploqa']], founder_all_rev_lookup, num_chr, file_gen = T, sample_type)
+
+### percent genomic difference
+chr_pct <- get_geno_pct_diff(cc_results[['ginf']], cc_results[['ginf_haploqa']], cc_results[['summary']], num_chr, founder_all_rev_lookup)
+
+### DO
+do_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, control_file, num_chr, ngen)
+
+
+# lookup tables
+founder_all_codes <- colnames(do_results[['pr']]$`X`) # take the X chromosome - this one has everything
+all_map_codes <- seq(1:length(founder_all_codes))
+founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
+founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+
+## location crossover comparison
+pos_haploqa_do <- locate_xo(do_results[['ginf_haploqa']], do_results[['map']])
+pos_qtl2_do <- do_results[['pos']]
+x_loc_diff <- location_xo_comp(pos_qtl2_do, pos_haploqa_do, num_chr)
+
+## error matrix
+err_comp(do_results[['pr']], do_results[['map']], num_chr, results_dir, sample_type)
+
+## genocode comparison matrix
+comp_matrix <- genocode_comp_matrix(do_results[['map']], do_results[['ginf']], do_results[['ginf_haploqa']], founder_all_rev_lookup, num_chr, file_gen = T, sample_type)
+
+
+### percent genomic difference
+chr_pct <- get_geno_pct_diff(do_results[['ginf']], do_results[['ginf_haploqa']], do_results[['summary']], num_chr, founder_all_rev_lookup)
+
+
+  
