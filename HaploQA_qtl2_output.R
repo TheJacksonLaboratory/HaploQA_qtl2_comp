@@ -19,19 +19,30 @@ library(stringr)
 library(stringi)
 library(lsa)
 
+### BXD: cross_info - all 1s, choose one founder genome to be A. Make sure foundergeno and cross_info have consistent labels for genomes.
+# geno for founders - http://haploqa-dev.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html
+# pick a color for DBA
+#
+# 1. run BXD
+# 2. dynamic cross_info instead of hard-coding
+# 3. number of crossovers, visualize in some way
+# 4. make cos_sim plots on high level (mean of a sample across entire genome)
+# 5. have Shiny work for BXD as well
+# 6. modularize and write documentations for functions
+# 7. http://haploqa-dev.jax.org/tag/f2.html
+
 
 # source the function script
 root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
 
-sample_type <- 'DO' # CC/DO/MiniMUGA/GigaMUGA/BXD
+sample_type <- 'BXD' # CC/DO/MiniMUGA/GigaMUGA/BXD/F2
 list_pheno <- c('WBC', 'NEUT')
 
 config <- fread(paste0(root, '/annotations_config.csv'))
 config_sample <- config[config$array_type == sample_type]
 
 sample_url <- config_sample$url
-ngen <- 3
 
 ## results directory
 results_dir <- file.path(root, 'results')
@@ -44,41 +55,22 @@ dir.create(rds_dir, showWarnings = FALSE)
 qtl2_file_gen <- FALSE
 num_chr <- c((1:19),"X")
 
-## text of control file
-control_file <- '{
-  "description": "HaploQA data - qtl2 test run",
-  "crosstype": "genail2",
-  "sep": ",",
-  "na.strings": ["-", "NA"],
-  "comment.char": "#",
-  "geno": "test_geno.csv",
-  "founder_geno": "test_foundergeno.csv",
-  "gmap": "test_gmap.csv",
-  "pmap": "test_pmap.csv",
-  "pheno": "test_pheno.csv",
-  "covar": "test_covar.csv",
-  "genotypes": {
-    "A": 1,
-    "H": 2,
-    "B": 3
-  },
-  "x_chr": "X",
-  "alleles": ["A", "B", "C", "D", "E", "F", "G", "H"],
-  "geno_transposed": true,
-  "founder_geno_transposed": true,
-  "sex": {
-    "covar": "Sex",
-    "female": "female",
-    "male": "male"
-  },
-  "cross_info": {
-    "file": "test_crossinfo.csv"
-  }
-}'
+founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
+founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
+
+
+
 
 ### fix founder contributions
 # founder for bxd comes from https://haploqa.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html
-do_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, control_file, num_chr, ngen)
+### bxd encoding
+do_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
+
+cc_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
+
+bxd_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
+
+f2_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen = T, samples_gen = F, control_file, num_chr)
 
 
 
@@ -150,6 +142,7 @@ for (i in num_chr) {
 
 saveRDS(do_haplo_test, paste0(rds_dir, 'haploqa_founder_prob_', sample_type, '.rds'))
 
+do_haplo_test <- readRDS(paste0(rds_dir, '/haploqa_founder_prob_', sample_type, '.rds'))
 
 cos_sim_all <- list()
 for (i in num_chr) {
@@ -182,16 +175,26 @@ for (i in num_chr) {
 cos_sim_all <- rbindlist(cos_sim_all)
 
 saveRDS(cos_sim_all, paste0(rds_dir, '/cos_sim_', sample_type, '.rds'))
-
+sample_type <- 'DO'
+cos_sim_all <- readRDS(paste0(rds_dir, '/cos_sim_', sample_type, '.rds'))
+df <- cos_sim_all %>% group_by(sample_id) %>% summarise(mean_chr = mean(cos_sim)) %>% as.data.frame()
+#df$chromosome <- factor(df$chromosome, num_chr)
+### make into line plot
+ggplot(df) + aes(y = mean_chr, x = seq(1, length(mean_chr))) + geom_line() + xlab('sample_index (1-277)') # take mean of entire genome
+pdf(paste0(results_dir, '/cos_sim_', sample_type, '.pdf'))
 for (sample in unique(cos_sim_all$sample_id)) {
   sample <- '6UY'
+  print(sample)
   sample_df <- cos_sim_all[(cos_sim_all$sample_id == sample),]
+  sample_df %>% group_by(sample_id) %>% summarise(mean_chr = mean(cos_sim)) %>% as.data.frame()
   sample_df$chromosome <- factor(sample_df$chromosome, num_chr)
-  ggplot(sample_df) + aes(x = pos, y = cos_sim) + geom_line() + ggtitle(paste0('Sample ID: ', sample)) + 
+  plot <- ggplot(sample_df) + aes(x = pos, y = cos_sim) + geom_line() + ggtitle(paste0('Sample ID: ', sample)) + 
     facet_wrap(.~chromosome)
+  print(plot)
   
 }
 
+dev.off()
 
 
 
@@ -251,12 +254,24 @@ do_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno
 founder_all_codes <- colnames(do_results[['pr']]$`X`) # take the X chromosome - this one has everything
 all_map_codes <- seq(1:length(founder_all_codes))
 founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
-founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+founder_df <- data.frame(founder_id = all_map_codes, founder_codes = founder_all_codes)
 
 ## location crossover comparison
-pos_haploqa_do <- locate_xo(do_results[['ginf_haploqa']], do_results[['map']])
-pos_qtl2_do <- do_results[['pos']]
-x_loc_diff <- location_xo_comp(pos_qtl2_do, pos_haploqa_do, num_chr)
+### number of crossovers on autosomes
+pdf(file.path(root, "num_crossover_plots.pdf"))
+xo_number_plot(do_results)
+xo_number_plot(cc_results)
+xo_number_plot(bxd_results)
+dev.off()
+
+
+## crossover distances
+pdf(file.path(root, "crossover_distance_mean_plots.pdf"))
+loc_xo_distance_plot(do_results)
+loc_xo_distance_plot(cc_results)
+loc_xo_distance_plot(bxd_results)
+dev.off()
+
 
 ## error matrix
 err_comp(do_results[['pr']], do_results[['map']], num_chr, results_dir, sample_type)
