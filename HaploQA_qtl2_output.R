@@ -36,43 +36,119 @@ library(lsa)
 root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
 
-sample_type <- 'BXD' # CC/DO/MiniMUGA/GigaMUGA/BXD/F2
 list_pheno <- c('WBC', 'NEUT')
 
-config <- fread(paste0(root, '/annotations_config.csv'))
-config_sample <- config[config$array_type == sample_type]
+do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
-sample_url <- config_sample$url
+cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
-## results directory
-results_dir <- file.path(root, 'results')
-dir.create(results_dir, showWarnings = FALSE) 
+bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
-# filepaths to save any rds file
-rds_dir <- file.path(results_dir, 'RDS')
-dir.create(rds_dir, showWarnings = FALSE)
+f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
-qtl2_file_gen <- FALSE
-num_chr <- c((1:19),"X")
 
+minimuga_results <- haplotype_reconstruction_pipeline('MiniMUGA', list_pheno, qtl2_file_gen = T, samples_gen = T)
+
+
+
+geno_all_comp <- function(sample, sample_type) {
+#sample <- '8RS'
 founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
 founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
 
+config_sample <- config[config$array_type == sample_type]
+qtl2_dir <- file.path(root, config_sample$qtl2_dir)
+df_cov <- fread(file.path(qtl2_dir, 'test_covar.csv')) %>% rename('sample_id' = 'id')
+
+
+haploqa_diplotype <- get_haplotypes(summary_df, data_dir)
+raw_geno_df <- haploqa_diplotype %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
+raw_geno_df[,c(3,4)] <- as.data.frame(apply(raw_geno_df[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
+raw_geno_df <- merge(raw_geno_df, df_cov, by = 'sample_id')
+raw_geno_df[(raw_geno_df$chromosome == 'X') & (raw_geno_df$Sex == 'male')]$haplotype2 <- 'Y'
+raw_geno_df$haplotype <- paste(raw_geno_df$haplotype2, raw_geno_df$haplotype1, sep='')
+raw_geno_df <- raw_geno_df %>% select(sample_id, snp_id, chromosome, haplotype)
+raw_geno_df[,4] <- lapply(raw_geno_df[,4], function(col) {
+  rev_col = stri_reverse(col)
+  ifelse(rev_col %in% founder_all_rev_lookup, rev_col, col)
+})
+
+
+founder_all_lookup <- setNames(names(founder_all_rev_lookup), founder_all_rev_lookup) # limit the lookup table
+founder_all_lookup <- founder_all_lookup[names(founder_all_lookup) %in% unique(raw_geno_df$haplotype)]
+founder_all_lookup <- setNames(LETTERS[seq(1, length(unique(raw_geno_df$haplotype)))], seq(1, length(unique(raw_geno_df$haplotype))))
+
+df_geno_all_chr <- list()
+
+for (chr in num_chr) {
+  #chr <- '1'
+  print(chr)
+    ## raw geno
+  raw_geno_acgt <- get_raw_geno(sample_type, chromosome = chr)
+  raw_geno_chr_acgt <- raw_geno_acgt %>% filter(sample_id == sample)
+  
+  f2_haploqa_mom <- as.data.frame(apply(as.data.frame(f2_results[['ph_geno_haploqa']][[chr]][,,1][sample,]), 1, function(x) founder_all_lookup[x]))
+  f2_haploqa_mom$marker <- rownames(f2_haploqa_mom)
+  f2_haploqa_mom <- f2_haploqa_mom %>% rename(f2_haploqa_mom = 1)
+  f2_haploqa_dad <- as.data.frame(apply(as.data.frame(f2_results[['ph_geno_haploqa']][[chr]][,,2][sample,]), 1, function(x) founder_all_lookup[x]))
+  f2_haploqa_dad$marker <- rownames(f2_haploqa_dad)
+  f2_haploqa_dad <- f2_haploqa_dad %>% rename(f2_haploqa_dad = 1)
+  f2_geno <- merge(f2_haploqa_mom, f2_haploqa_dad, by = 'marker')
+  f2_geno$haplo_diplotype <- paste(f2_geno$f2_haploqa_mom, f2_geno$f2_haploqa_dad, sep='')
+  f2_geno <- f2_geno %>% select(marker, haplo_diplotype)
+  
+  
+  f2_haploqa_mom <- as.data.frame(apply(as.data.frame(f2_results[['ph_geno']][[chr]][,,1][sample,]), 1, function(x) founder_all_lookup[x]))
+  f2_haploqa_mom$marker <- rownames(f2_haploqa_mom)
+  f2_haploqa_mom <- f2_haploqa_mom %>% rename(f2_haploqa_mom = 1)
+  f2_haploqa_dad <- as.data.frame(apply(as.data.frame(f2_results[['ph_geno']][[chr]][,,2][sample,]), 1, function(x) founder_all_lookup[x]))
+  f2_haploqa_dad$marker <- rownames(f2_haploqa_dad)
+  f2_haploqa_dad <- f2_haploqa_dad %>% rename(f2_haploqa_dad = 1)
+  f2_geno_qtl2 <- merge(f2_haploqa_mom, f2_haploqa_dad, by = 'marker')
+  f2_geno_qtl2$qtl2_calls <- paste(f2_geno_qtl2$f2_haploqa_mom, f2_geno_qtl2$f2_haploqa_dad, sep='')
+  f2_geno_qtl2 <- f2_geno_qtl2 %>% select(marker, qtl2_calls)
+  
+  
+  
+  df_geno_all_acgt <- merge(merge(raw_geno_chr_acgt, f2_geno, by = 'marker', sort = F), f2_geno_qtl2, by = 'marker', sort = F) %>% select(marker, sample_id, chr, pos, everything())
+  df_geno_all_acgt[df_geno_all_acgt$haplo_diplotype != df_geno_all_acgt$qtl2_calls,]
+  df_geno_all_acgt$is_crossover <- NA
+  
+  ind <- which(df_geno_all_acgt$haplo_diplotype != df_geno_all_acgt$qtl2_calls)
+  
+  list_xo <- list()
+  list <- split(ind, cumsum(c(1, diff(ind) != 1)))
+  for (i in seq(1, length(list))) {
+    list_xo <- c(list[[i]][1], list_xo)
+  }
+  list_xo <- sort(unlist(list_xo))
+  
+  rows <- unlist(lapply(list_xo, function(x) (x-20):(x+20)))
+  rows <- rows[rows > 0]
+  df_geno_all_acgt[list_xo,]$is_crossover <- 'True'
+  df_geno_xo <- df_geno_all_acgt[rows,]
+  
+  df_geno_xo[is.na(df_geno_xo$is_crossover),]$is_crossover <- 'False'
+  
+  df_geno_xo$original_row <- rows # always 41 - 20 above, 20 below, and crossover itself
+    
+  df_geno_all_chr[[chr]] <- df_geno_xo
+  }
+
+  return(df_geno_all_chr)
+}
+
+
+ 
+sample_geno <- geno_all_comp('8RS', 'F2')
 
 
 
-### fix founder contributions
-# founder for bxd comes from https://haploqa.jax.org/tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html
-### bxd encoding
-do_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
 
-cc_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
-
-bxd_results <- get_sample_result(sample_type, results_dir, list_pheno, qtl2_file_gen = F, samples_gen = F, num_chr)
-
-f2_results <- get_sample_result(sample_type, sample_url, results_dir, list_pheno, qtl2_file_gen = T, samples_gen = F, control_file, num_chr)
-
-
+### get all crossovers, 20 markers above and below
+### run this for one sample, all chromosomes, add chr and pos information
+## make into one file
+## then start minimu
 
 ### 1. genoprob_to_alleleprob - condense into founder prob (save to rds)
 founder_all_codes <- colnames(do_results[['pr']]$`X`) # take the X chromosome - this one has everything
@@ -262,6 +338,7 @@ pdf(file.path(root, "num_crossover_plots.pdf"))
 xo_number_plot(do_results)
 xo_number_plot(cc_results)
 xo_number_plot(bxd_results)
+xo_number_plot(f2_results)
 dev.off()
 
 
@@ -270,6 +347,7 @@ pdf(file.path(root, "crossover_distance_mean_plots.pdf"))
 loc_xo_distance_plot(do_results)
 loc_xo_distance_plot(cc_results)
 loc_xo_distance_plot(bxd_results)
+loc_xo_distance_plot(f2_results)
 dev.off()
 
 
