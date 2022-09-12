@@ -853,7 +853,7 @@ get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr, foun
 #
 # @return results (list of dataframes) - a list containing all objects necessary for computations
 haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file_gen, samples_gen) {
-  
+  #sample_type <- 'DO'
   ## results directory
   results_dir <- file.path(root, 'results')
   dir.create(results_dir, showWarnings = FALSE) 
@@ -985,8 +985,8 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   
   ### Part 2 - convert results to qtl2 input format
   # implement function
-  if (qtl2_file_gen == T) {
-    file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list)
+  
+  file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list)
     # unpack
     df_geno <- file_output[[1]]
     df_gmap <- file_output[[2]]
@@ -999,7 +999,7 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
     df_crossinfo <- file_output[[7]]
     founder_haplo_lookup <- file_output[[8]]
     
-  
+  if (qtl2_file_gen == T) {
     # write out files
     write.csv(df_geno, paste0(qtl2_dir, '/test_geno.csv'), row.names = F)
     write.csv(df_gmap, paste0(qtl2_dir, '/test_gmap.csv'), row.names = F)
@@ -1047,7 +1047,7 @@ get_raw_geno <- function(sample_type, chromosome) {
   # all txt file from directory
   data_files <- dir(data_dir, pattern = '\\.txt$', full.names = TRUE)
   ### combine all files
-  df_raw <- rbindlist(lapply(data_files, read_sample_txt)) %>% filter(!sample_id %in% exclude_list) # save Y chrom here for gender plotting
+  df_raw <- rbindlist(lapply(data_files, read_sample_txt))  # save Y chrom here for gender plotting
   
   # clean up summary df
   sum_df <- summary_df %>% 
@@ -1057,7 +1057,7 @@ get_raw_geno <- function(sample_type, chromosome) {
   
   # eliminate those that has no call > 10%
   ### use checkifnot to make sure the markers/SNP are in the annotation file (annotation file is the boss)
-  df_all <- merge(df_raw, sum_df, by = 'sample_id', sort = F) %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M')) %>% filter(!sample_id %in% exclude_list) 
+  df_all <- merge(df_raw, sum_df, by = 'sample_id', sort = F) %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M')) #%>% filter(!sample_id %in% exclude_list) 
   
   geno_sub <- df_all %>% select(sample_id, snp_id, allele1_fwd, allele2_fwd) %>%
     mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
