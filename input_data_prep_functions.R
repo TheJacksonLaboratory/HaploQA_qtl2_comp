@@ -78,13 +78,14 @@ qtl2_geno <- function(df, annot_encode_df) {
     mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
     select(sample_id, snp_id, gene_exp) %>% rename(marker = snp_id)
   df_geno <- dcast(geno_sub, marker~sample_id, value.var="gene_exp") # inbred - most are homozygous
+  ### cut markers more than 10%
   # merge with annotations
   df_geno <- df_geno %>% filter(marker %in% unique(annot_encode_df$marker)) ### replace with a stopif assert line here
   # put alleles in order of marker as shown in geno dataframe
   geno_encode_annot <- merge(df_geno, annot_encode_df, by = 'marker', all.x = T) %>% select(allele1, allele2) # let it break if there's NAs
   rownames(df_geno) <- df_geno$marker
   df_geno_encoded <- as.data.frame(encode_geno(df_geno[,-1], geno_encode_annot))
-  df_geno_encoded$marker <- rownames(df_geno_encoded)
+  df_geno_encoded$marker <- rownames(df_geno)
   # reorder columns
   df_geno_encoded <- df_geno_encoded %>% select(marker, everything())
 
@@ -242,6 +243,7 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
     df_founders_encoded <- df_founders_encoded %>% filter(marker %in% marker_order) %>% arrange(factor(marker, levels = marker_order))
     df_founders_encoded <- df_founders_encoded %>% select(marker, everything())
   } else {
+    founders_list <- names(founder_haplo_lookup)
     for (founder in founders_list) {  # if not 8 founder strains, custom select letters
       founders_df <- merge(df, sum_df, by = 'original_sample_id') %>% 
         mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
@@ -573,11 +575,32 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_fo
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
-  ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_rev_lookup, cross = cross_list[['cross']], qtl2_dir, sample_type, n_founders, founder_haplo_lookup)
-  cross_list[['ginf_haploqa']] <- ginf_haploqa
+  # simulate maxmarg to calculate haploqs ginf 
+  ginf_haploqa_fp <- paste0(rds_dir, "/ginf_haploqa_", sample_type, ".rds")
+  if (!file.exists(ginf_haploqa_fp)) {
+    print('haploqa ginf file does not exist, running calculations from maxmarg simulation')
+    ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_rev_lookup, cross = cross_list[['cross']], qtl2_dir, sample_type, n_founders, founder_haplo_lookup)
+    ## save to rds file
+    cross_list[['ginf_haploqa']] <- ginf_haploqa
+    saveRDS(ginf_haploqa, file = ginf_haploqa_fp)
+  } else {
+    print('haploqa ginf file exists, reading in file')
+    ginf_haploqa <- readRDS(ginf_haploqa_fp)
+    cross_list[['ginf_haploqa']] <- ginf_haploqa
+  }
   
-  ph_geno_haploqa <- guess_phase_sim(ginf_haploqa, cross_list[['cross']], rds_dir, sample_type)
-  cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
+  # simulate guess_phase for haploqa to calculate phased geno
+  ph_geno_haploqa_fp <- paste0(rds_dir, "/ph_geno_haploqa_", sample_type, ".rds")
+  if (!file.exists(ph_geno_haploqa_fp)) {
+    print('haploqa phased genotype file does not exist, running calculations from guess phase simulation')
+    ph_geno_haploqa <- guess_phase(cross_list[['cross']], ginf_haploqa)
+    cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
+    saveRDS(ph_geno_haploqa, file = ph_geno_haploqa_fp)
+  } else {
+    print('haploqa phased genotype file exists, reading in file')
+    ph_geno_haploqa <- readRDS(ph_geno_haploqa_fp)
+    cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
+  }
 
   return(cross_list)
 }
@@ -685,12 +708,6 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
   return(ginf_haploqa)
 }
 
-guess_phase_sim <- function(ginf_haploqa, cross, rds_dir, sample_type) {
-  ph_geno_haploqa <- guess_phase(cross, ginf_haploqa)
-  # save this separately for easy shiny input
-  saveRDS(ph_geno_haploqa, paste0(rds_dir, '/ph_geno_haploqa_', sample_type,'.rds'))
-  return(ph_geno_haploqa)
-}
 
 
 location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
@@ -985,9 +1002,16 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   
   ### Part 2 - convert results to qtl2 input format
   # implement function
-  
-  file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list)
-    # unpack
+  qtl2_objects_fp <- paste0(rds_dir, "/qtl2_objects_", sample_type, ".rds")
+  if (!file.exists(qtl2_objects_fp)) {
+    print('qtl2 input files do not exist, running calculations')
+    file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list)
+    saveRDS(file_output, file = qtl2_objects_fp)
+  } else {
+    print('qtl2 input files exist, reading in file')  
+    file_output <- readRDS(qtl2_objects_fp)
+  }
+  # unpack
     df_geno <- file_output[[1]]
     df_gmap <- file_output[[2]]
     df_gmap <- sort_chr(df_gmap, c((1:19),"X")) # put chromosomes in order
@@ -1017,9 +1041,12 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   return(results)
 }
 
+# function to get only the raw genotype data for the genotype comparison process on one chromosome
+# @param sample_type (string) - type of sample, such as CC, DO, F2, etc.
+# @param chromosome (string) - chromosome to reteieve raw genotype data for
+#
+# @return raw_geno (data.frame) - dataframe of raw genotype data for one chromosome
 get_raw_geno <- function(sample_type, chromosome) {
-  #sample_type <- 'F2'
-  #chromosome <- '1'
   ### config file
   config <- fread(paste0(root, '/annotations_config.csv'))
   
@@ -1069,6 +1096,15 @@ get_raw_geno <- function(sample_type, chromosome) {
   
 }
 
+
+# revised version of plot_onegeno function from qtl2 package
+# instead of plotting one geno per chromosome, this function plots haploqa and qtl2 at the same time and put the genotypes side by side for each chr
+# @param geno (data.frame) - genotype data of first model to plot (qtl2 or haploqa)
+# @param geno1 (data.frame) - genotype data of the other model to plot (qtl2 or haploqa, different from geno above)
+# @param map (named list) - genetic map, should be the same for both models
+# @param ind (int) - the individual to plot for
+#
+# @output (ggplot object) - geno plot for the selected models
 plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
                               col=NULL, na_col="white",
                               swap_axes=FALSE,
@@ -1492,4 +1528,131 @@ loc_xo_distance_plot <- function(sample_result) {
 }
 
 
+
+
+cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
+  print(sample_type)
+  num_chr <- seq(1,19) # do only autosomes unless otherwise specified
+  ### 1. genoprob_to_alleleprob - condense into founder prob (save to rds)
+  founder_all_codes <- colnames(sample_result[['pr']]$`X`) # take the X chromosome - this one has everything
+  all_map_codes <- seq(1:length(founder_all_codes))
+  #founder_all_lookup <- setNames(all_map_codes, founder_all_codes) # make maxmarg
+  founder_all_rev_lookup <- setNames(founder_all_codes, all_map_codes)
+  
+  test_geno <- sample_result[['ginf_haploqa']]
+  qtl2_test <- genoprob_to_alleleprob(sample_result[['pr']])
+  map <- sample_result[['map']]
+  haploqa_founderprob_fp <- paste0(rds_dir, '/haploqa_founder_prob_', sample_type, '.rds')
+  
+  if(!file.exists(haploqa_founderprob_fp)) {
+    print('founder prob does not exist, running calculations')
+  haplo_test <- list()
+  for (i in num_chr) {
+    #i <- '19'
+    print(i)
+    df <- test_geno[[i]]
+    
+    haplo_test[[i]] <- array(dim = c(nrow(df), 8, ncol(df)))
+    rownames(haplo_test[[i]]) <- rownames(df)
+    colnames(haplo_test[[i]]) <- LETTERS[seq(1,8)]
+    for (col in seq(1, ncol(df))) {
+      #col <- 328
+      print(col)
+      
+      df_test <- data.frame(sample_id = rownames(df), col_val = df[,c(col)])
+      df_test[,2] <- as.data.frame(apply(df_test[c(2)], 2, function(x) founder_all_rev_lookup[x]))
+      df_test <- df_test %>% separate(col_val, c("allele1", "allele2"), sep=cumsum(c(1)))
+      
+      # haplo
+      a <- table(df_test[,c(1,2)])
+      b <- table(df_test[,c(1,3)])
+      
+      if(length(colnames(b)) < 8) {
+        b <- geno_align(b)
+      } 
+      if((length(colnames(a)) < 8)) {
+        a <- geno_align(a)
+      }
+      
+      haplo_comp <- (a + b) / 2
+      
+      haplo_test[[i]][,,col] <- haplo_comp
+      
+    }
+  }
+  
+  saveRDS(haplo_test, haploqa_founderprob_fp)
+  } else {
+    print('founder prob exists, reading in file')
+    haplo_test <- readRDS(haploqa_founderprob_fp)
+  }
+  
+  cos_sim_diff_fp <- paste0(rds_dir, '/cos_sim_', sample_type, '.rds')
+  if(!file.exists(cos_sim_diff_fp)) {
+    print('cos similarity does not exist, running calculations')
+  cos_sim_all <- list()
+  for (i in seq(1, 19)) {
+    #i <- '1'
+    df <- test_geno[[i]]
+    map_i <- map[[i]]
+    print(i)
+    cos_sim_chr <- list()
+    for (col in seq(1, ncol(df))) {
+      #col <- 3
+      map_val <- as.numeric(map_i[col])
+      # qtl2
+      #print(col)
+      qtl2_comp <- qtl2_test[[i]][,,col]
+      ### plug the pre-calculated square roots
+      haplo_comp <- haplo_test[[i]][,,col]
+      
+      a = rowSums(qtl2_comp * haplo_comp)
+      b = (sqrt(rowSums(qtl2_comp * qtl2_comp))) * (sqrt(rowSums(haplo_comp * haplo_comp)))
+      
+      cos_sim_list = a/b
+      
+      cos_marker_df <- data.frame(sample_id = rownames(haplo_comp), cos_sim = unlist(cos_sim_list), pos = map_val)
+      cos_marker_df$chromosome <- i
+      cos_sim_chr[[col]] <- as.data.table(cos_marker_df)
+    }
+    cos_sim_all[[i]] <- rbindlist(cos_sim_chr)
+  }  
+  
+  cos_sim_all <- rbindlist(cos_sim_all)
+  saveRDS(cos_sim_all, cos_sim_diff_fp)
+  } else {
+    print('cosine similarity file exists, reading in file')
+    cos_sim_all <- readRDS(cos_sim_diff_fp)
+  }
+    df <- cos_sim_all %>% group_by(sample_id) %>% summarise(mean_chr = mean(cos_sim)) %>% as.data.frame()
+    #df$chromosome <- factor(df$chromosome, num_chr)
+    ### make into line plot
+    ggplot(df) + aes(y = mean_chr, x = seq(1, length(mean_chr))) + geom_line() + xlab('sample_index (1-277)') # take mean of entire genome
+    pdf(paste0(results_dir, '/cos_sim_', sample_type, '.pdf'))
+    for (sample in unique(cos_sim_all$sample_id)) {
+      #sample <- '6UY'
+      print(sample)
+      sample_df <- cos_sim_all[(cos_sim_all$sample_id == sample),]
+      sample_df %>% group_by(sample_id) %>% summarise(mean_chr = mean(cos_sim)) %>% as.data.frame()
+      sample_df$chromosome <- factor(sample_df$chromosome, num_chr)
+      plot <- ggplot(sample_df) + aes(x = pos, y = cos_sim) + geom_line() + ggtitle(paste0('Sample ID: ', sample)) + 
+        facet_wrap(.~chromosome)
+      print(plot)
+    }
+    
+    dev.off()
+    
+}
+  
+
+geno_align <- function(df) {
+  founder_codes <- LETTERS[seq(1,8)]
+  col_diff <- setdiff(founder_codes, colnames(df))
+  dum_array <- array(0, dim = c(nrow(df), length(col_diff)))
+  colnames(dum_array) <- col_diff
+  df <- cbind(df, dum_array)
+  df <- df[ ,founder_codes]
+  
+  return(df)
+}
 
