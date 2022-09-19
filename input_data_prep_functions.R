@@ -1531,7 +1531,13 @@ loc_xo_distance_plot <- function(sample_result) {
 
 
 cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
+  #sample_result <- bxd_results
+  #sample_type <- 'BXD'
   print(sample_type)
+  config <- fread(paste0(root, '/annotations_config.csv'))
+  config_sample <- config[config$array_type == sample_type]
+  founders_list <- unlist(strsplit(config_sample$founders_list, ", "))
+  
   num_chr <- seq(1,19) # do only autosomes unless otherwise specified
   ### 1. genoprob_to_alleleprob - condense into founder prob (save to rds)
   founder_all_codes <- colnames(sample_result[['pr']]$`X`) # take the X chromosome - this one has everything
@@ -1548,15 +1554,17 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
     print('founder prob does not exist, running calculations')
   haplo_test <- list()
   for (i in num_chr) {
-    #i <- '19'
+    #i <- 1
     print(i)
     df <- test_geno[[i]]
     
-    haplo_test[[i]] <- array(dim = c(nrow(df), 8, ncol(df)))
+    haplo_test[[i]] <- array(dim = c(nrow(df), length(founders_list), ncol(df)))
     rownames(haplo_test[[i]]) <- rownames(df)
-    colnames(haplo_test[[i]]) <- LETTERS[seq(1,8)]
+    colnames(haplo_test[[i]]) <- LETTERS[seq(1,length(founders_list))]
+
+    
     for (col in seq(1, ncol(df))) {
-      #col <- 328
+      #col <- 1
       print(col)
       
       df_test <- data.frame(sample_id = rownames(df), col_val = df[,c(col)])
@@ -1568,13 +1576,15 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
       b <- table(df_test[,c(1,3)])
       
       if(length(colnames(b)) < 8) {
-        b <- geno_align(b)
+        b <- geno_align(b, length(founders_list))
       } 
       if((length(colnames(a)) < 8)) {
-        a <- geno_align(a)
+        a <- geno_align(a, length(founders_list))
       }
       
       haplo_comp <- (a + b) / 2
+      
+      haplo_comp <- haplo_comp[,1:length(unique(c(df_test$allele1, df_test$allele2)))]
       
       haplo_test[[i]][,,col] <- haplo_comp
       
@@ -1592,7 +1602,7 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
     print('cos similarity does not exist, running calculations')
   cos_sim_all <- list()
   for (i in seq(1, 19)) {
-    #i <- '1'
+    #i <- 1
     df <- test_geno[[i]]
     map_i <- map[[i]]
     print(i)
@@ -1605,6 +1615,9 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
       qtl2_comp <- qtl2_test[[i]][,,col]
       ### plug the pre-calculated square roots
       haplo_comp <- haplo_test[[i]][,,col]
+      
+      print(qtl2_comp)
+      print(haplo_comp)
       
       a = rowSums(qtl2_comp * haplo_comp)
       b = (sqrt(rowSums(qtl2_comp * qtl2_comp))) * (sqrt(rowSums(haplo_comp * haplo_comp)))
@@ -1645,8 +1658,8 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
 }
   
 
-geno_align <- function(df) {
-  founder_codes <- LETTERS[seq(1,8)]
+geno_align <- function(df, n_founders) {
+  founder_codes <- LETTERS[seq(1,n_founders)]
   col_diff <- setdiff(founder_codes, colnames(df))
   dum_array <- array(0, dim = c(nrow(df), length(col_diff)))
   colnames(dum_array) <- col_diff
