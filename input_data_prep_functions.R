@@ -88,7 +88,7 @@ qtl2_geno <- function(df, annot_encode_df) {
   df_geno_encoded$marker <- rownames(df_geno)
   # reorder columns
   df_geno_encoded <- df_geno_encoded %>% select(marker, everything())
-
+  colnames(df_geno_encoded) <- colnames(df_geno)
   return(df_geno_encoded)
 }
 
@@ -222,10 +222,11 @@ qtl2_cov <- function(df_raw, split_level, df, plot_type) { # list of unique samp
 #
 # @return df_founders_encoded (data.frame) - encoded founder geno data for qtl2 input
 # columns of df_founders_encoded: marker, A, B, C, D, E, F, G, H
-qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_encode_df, founders_list = NULL, marker_order, founder_haplo_lookup){
+qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_encode_df, founders_list = NULL, marker_order, founder_haplo_lookup, sample_type){
   founder_codes <- unique(founders_dict$`Strain Name`)
   sum_df <- sample_summary_scrape(read_html(founder_url), url_list) %>% 
     select('ID', 'Strain Name', 'Secondary IDs') %>% rename(sample_id = ID, original_sample_id = 'Secondary IDs')
+
   if((all(founders_list %in% founder_codes)) & (length(founders_list) == 8)) { ## if 8 founder strains, use founder dictionary to map to according letters
     founders_df <- df[grep("_", df$original_sample_id), ] %>% 
       mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
@@ -243,8 +244,7 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
     df_founders_encoded <- df_founders_encoded %>% filter(marker %in% marker_order) %>% arrange(factor(marker, levels = marker_order))
     df_founders_encoded <- df_founders_encoded %>% select(marker, everything())
   } else {
-    founders_list <- names(founder_haplo_lookup)
-    for (founder in founders_list) {  # if not 8 founder strains, custom select letters
+    founders_list <- names(founder_haplo_lookup)# if not 8 founder strains, custom select letters
       founders_df <- merge(df, sum_df, by = 'original_sample_id') %>% 
         mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
         rename(sample_id = 'sample_id.y') %>%
@@ -262,11 +262,10 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
       # put the allele annotations in according order
       founder_encode_annot <- merge(annot_encode_df, test_foundergeno, by = 'marker') %>% select(allele1, allele2)
       df_founders_encoded <- as.data.frame(encode_geno(test_foundergeno[,-1], founder_encode_annot))
-      df_founders_encoded$marker <- rownames(df_founders_encoded)
+      df_founders_encoded$marker <- rownames(test_foundergeno)
       df_founders_encoded <- df_founders_encoded %>% filter(marker %in% marker_order) %>% arrange(factor(marker, levels = marker_order))
       df_founders_encoded <- df_founders_encoded %>% select(marker, everything())
       
-  } 
   }
   
   
@@ -279,14 +278,14 @@ qtl2_foundergeno <- function(df, founder_url, url_list, founders_dict, annot_enc
 #
 # @return founders_total (data.frame) - cross info data with sample IDs and mapped strain info for qtl2 input
 # columns of founders_total: id, A, B, C, D, E, F, G, H
-qtl2_ci <- function(summary_df, ngen, founders_list) {
+qtl2_ci <- function(summary_df, ngen, founder_haplo_lookup) {
   founder_list <- LETTERS[seq(1,8)]
   # join with summary table and CC file in karl's github
   ### if no founder info, filter out.
   # match the strain names with the cc cross info csv
   ci_sum <- summary_df %>% select(`ID`) %>% unique() %>% rename(id = ID)
   ci_sum$ngen <- ngen
-  ci_sum[ ,c(founder_list[1:length(founders_list)])] <- 1
+  ci_sum[ ,c(founder_list[1:length(founder_haplo_lookup)])] <- 1
   df_crossinfo <- ci_sum # read_cross does not allow NAs here
   
   return(df_crossinfo)
@@ -311,8 +310,6 @@ get_founder_data <- function(founder_url, url_list) {
     df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
     founders_total <- rbind(founders_total,df_temp)
   }
-  
-  df <- read.tsv(textConnection(content(GET(file), 'text')))
   
  return(founders_total)
 }
@@ -353,7 +350,7 @@ get_haplotypes <- function(summary_df, data_dir) {
 # @return file_output (list) - nested list containing all files necessary for qtl2 input
 # specifically: df_geno, df_gmap, df_pmap, df_pheno, df_covar, df_foundergeno, df_crossinfo
 # see individual functions above for column names of each dataframe
-get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list) {
+get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list, founder_url) {
   # list container to store outputs
   file_output <- list()
   
@@ -431,33 +428,42 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
   
   ### founder genomes
   # domain of haploqa. Founder data exist on non-dev version
-  url_domain <- 'http://haploqa.jax.org/'
-  # set urls
-  founder_url <- 'http://haploqa.jax.org//tag/UNC_Villena_GIGMUGV01_20141012_FinalReport.html'
+  url_domain <- 'http://haploqa-dev.jax.org/'
   # dictionary
-  
   founders_dict <- fread(paste0(root, '/founder_strains_table.csv')) %>% rename(`Strain Name` = founder_strain)
   founder_strains <- unique(founders_dict$`Strain Name`) # get the names of founder strains
   # get html and list of url to sample data
   html_table <- read_html(founder_url) %>% html_nodes("a") %>% html_attr("href")
   url_list <- paste0(url_domain, html_table[grepl('/sample', html_table)])
   
-  # get founder data
-  fp_founders <- file.path(root, 'UNC_Villena_founder_samples.csv')
-  if (file.exists(fp_founders)) {
-    founders_total <- fread(fp_founders)
-  } else { 
-    founders_total <- get_founder_data(founder_url, url_list)
-    write.csv(founders_total, paste0(root, '/UNC_Villena_founder_samples.csv'), row.names = F)
+  # get founder data for gigamuga
+  if (sample_type %in% c('CC', 'DO', 'BXD', 'F2')) {
+    fp_founders <- file.path(root, 'UNC_Villena_founder_samples.csv')
+    if (file.exists(fp_founders)) {
+      founders_total <- fread(fp_founders)
+    } else { 
+      founders_total <- get_founder_data(founder_url, url_list)
+      write.csv(founders_total, fp_founders, row.names = F)
+    }
   }
   
-  df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup)
+  if (sample_type %in% c('MiniMUGA')) {
+    fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
+    if (file.exists(fp_founders)) {
+      founders_total <- fread(fp_founders)
+    } else { 
+      founders_total <- get_founder_data(founder_url, url_list)
+      write.csv(founders_total, fp_founders, row.names = F)
+    }
+  }  
+  df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup, sample_type)
   # store in output
   file_output[[6]] <- df_founders_encoded 
   print('founder geno data done')
   
   # cross info
-  df_crossinfo <- qtl2_ci(summary_df, ngen, founders_list)
+  df_crossinfo <- qtl2_ci(summary_df, ngen, founder_haplo_lookup)
+  
   # store in output
   file_output[[7]] <- df_crossinfo 
   print('cross info data done')
@@ -486,9 +492,12 @@ sort_chr <- function(df, sort_order) {
 #
 # @return cross_list (list containing multiple objects) - a list that has all the objects necessary for further research
 # such as genetic map, calculated qtl2 objects, phased genotypes for both qtl2 and haploqa, etc.
-save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup) {
+save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model) {
   num_chr <- c((1:19),"X")
   print(sample_type)
+  if (truth_model == T) {
+    sample_type = paste0(sample_type, '_truth')
+  }
   # check if control file exist
   control_fp <- paste0(qtl2_dir, '/test.json')
   print(control_fp)
@@ -567,7 +576,7 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_fo
   }
   
   # get summary file
-  summary_df <- fread(paste0(data_dir, '/', sample_type, '_summary.csv'))
+  summary_df <- fread(paste0(data_dir, '/', strsplit(sample_type, '_')[[1]][1], '_summary.csv'))
   cross_list[['summary']] <- summary_df
   
   cross_list[['data_dir']] <- data_dir
@@ -696,14 +705,14 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
     df[,2:ncol(df)] <- mutate_all(df[,2:ncol(df)], function(x) as.numeric(as.character(x)))
     rownames(df) <- df$sample_id
     
-    df <- df %>% select(-c(sample_id)) %>% as.matrix()
+    df <- df %>% select(-c(sample_id)) 
     
     col_order <- names(cross$gmap[[i]])
     df <- df[,col_order]
-    ginf_haploqa[[i]] <- df
+    ginf_haploqa[[i]] <- df 
   }
   
-  attr(ginf_haploqa, "crosstype") <- paste0('genail', n_founders)
+  attr(ginf_haploqa, "crosstype") <- paste0('genail', length(founder_haplo_lookup))
   
   return(ginf_haploqa)
 }
@@ -869,7 +878,7 @@ get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr, foun
 # @param samples_gen (True/False) - toggle to set whether to (re)generate individual sample  files
 #
 # @return results (list of dataframes) - a list containing all objects necessary for computations
-haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file_gen, samples_gen) {
+haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file_gen, samples_gen, truth_model) {
   #sample_type <- 'DO'
   ## results directory
   results_dir <- file.path(root, 'results')
@@ -887,15 +896,22 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   n_founders <- length(founders_list)
   ngen <- config_sample$ngen
   sample_url <- config_sample$url
+  founder_url <- config_sample$founder_url
   
   # data output directory
   data_dir <- file.path(root, config_sample$data_dir)
   dir.create(data_dir, showWarnings = FALSE) 
   
   ## create a data directory for qtl2 input data
-  qtl2_dir <- file.path(root, config_sample$qtl2_dir) # name of desired output folder
-  # create if folder not exist
-  dir.create(qtl2_dir, showWarnings = FALSE)
+  if (truth_model == T) {
+    qtl2_dir <- paste0(root, '/', config_sample$qtl2_dir, '_truth')
+    # create if folder not exist
+    dir.create(qtl2_dir, showWarnings = FALSE)
+  } else {
+    qtl2_dir <- file.path(root, config_sample$qtl2_dir) # name of desired output folder
+    # create if folder not exist
+    dir.create(qtl2_dir, showWarnings = FALSE)
+  }
   
   # filepaths to save any rds file
   rds_dir <- file.path(results_dir, 'RDS')
@@ -916,38 +932,105 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   ## list of samples to exclude, if any
   exclude_list <- unlist(strsplit(config_sample$exclude_samples, ", "))
   
+  if (truth_model == T) {
+    control_file <- paste0('{
+    "description": "HaploQA data - qtl2 test run",
+    "crosstype": "', config_sample$truth_model, '",
+    "sep": ",",
+    "na.strings": ["-", "NA"],
+    "comment.char": "#",
+    "geno": "test_geno.csv",
+    "founder_geno": "test_foundergeno.csv",
+    "gmap": "test_gmap.csv",
+    "pmap": "test_pmap.csv",
+    "pheno": "test_pheno.csv",
+    "covar": "test_covar.csv",
+    "genotypes": {
+      "A": 1,
+      "H": 2,
+      "B": 3
+    },
+    "x_chr": "X",
+    "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, n_founders)]))),2), '], 
+    "geno_transposed": true,
+    "founder_geno_transposed": true,
+    "sex": {
+      "covar": "Sex",
+      "female": "female",
+      "male": "male"
+    },
+    "cross_info": {
+      "file": "test_crossinfo.csv"
+    }
+  }')
+  } else {
+    control_file <- paste0('{
+    "description": "HaploQA data - qtl2 test run",
+    "crosstype": "genail', n_founders, '",
+    "sep": ",",
+    "na.strings": ["-", "NA"],
+    "comment.char": "#",
+    "geno": "test_geno.csv",
+    "founder_geno": "test_foundergeno.csv",
+    "gmap": "test_gmap.csv",
+    "pmap": "test_pmap.csv",
+    "pheno": "test_pheno.csv",
+    "covar": "test_covar.csv",
+    "genotypes": {
+      "A": 1,
+      "H": 2,
+      "B": 3
+    },
+    "x_chr": "X",
+    "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, n_founders)]))),2), '], 
+    "geno_transposed": true,
+    "founder_geno_transposed": true,
+    "sex": {
+      "covar": "Sex",
+      "female": "female",
+      "male": "male"
+    },
+    "cross_info": {
+      "file": "test_crossinfo.csv"
+    }
+  }')
+  }
+  
+  if (truth_model == T & sample_type == 'F2') {
   ## text of control file
   ### alleles need to be consistent with genail
-  control_file <- paste0('{
-  "description": "HaploQA data - qtl2 test run",
-  "crosstype": "genail', n_founders, '",
-  "sep": ",",
-  "na.strings": ["-", "NA"],
-  "comment.char": "#",
-  "geno": "test_geno.csv",
-  "founder_geno": "test_foundergeno.csv",
-  "gmap": "test_gmap.csv",
-  "pmap": "test_pmap.csv",
-  "pheno": "test_pheno.csv",
-  "covar": "test_covar.csv",
-  "genotypes": {
-    "A": 1,
-    "H": 2,
-    "B": 3
-  },
-  "x_chr": "X",
-  "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, n_founders)]))),2), '], 
-  "geno_transposed": true,
-  "founder_geno_transposed": true,
-  "sex": {
-    "covar": "Sex",
-    "female": "female",
-    "male": "male"
-  },
-  "cross_info": {
-    "file": "test_crossinfo.csv"
+    control_file <- paste0('{
+    "description": "HaploQA data - qtl2 test run",
+    "crosstype": "f2",
+    "sep": ",",
+    "na.strings": ["-", "NA"],
+    "comment.char": "#",
+    "geno": "test_geno.csv",
+    "founder_geno": "test_foundergeno.csv",
+    "gmap": "test_gmap.csv",
+    "pmap": "test_pmap.csv",
+    "pheno": "test_pheno.csv",
+    "covar": "test_covar.csv",
+    "genotypes": {
+      "A": 1,
+      "H": 2,
+      "B": 3
+    },
+    "x_chr": "X",
+    "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, n_founders)]))),2), '], 
+    "geno_transposed": true,
+    "founder_geno_transposed": true,
+    "sex": {
+      "covar": "sex",
+      "female": "female",
+      "male": "male"
+    },
+    "cross_info": {
+      "covar":"cross_direction", "(AxB)x(AxB)":0, "(BxA)x(AxB)":0, "(BxA)x(BxA)":0, "(AxB)x(BxA)":0
+    }
+  }')
   }
-}')
+
   
   ###############################################################################
   ### Part 1 - get results from HaploQA
@@ -1005,7 +1088,7 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
   qtl2_objects_fp <- paste0(rds_dir, "/qtl2_objects_", sample_type, ".rds")
   if (!file.exists(qtl2_objects_fp)) {
     print('qtl2 input files do not exist, running calculations')
-    file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list)
+    file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list, founder_url)
     saveRDS(file_output, file = qtl2_objects_fp)
   } else {
     print('qtl2 input files exist, reading in file')  
@@ -1019,9 +1102,55 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
     df_pmap <- sort_chr(df_pmap, c((1:19),"X"))
     df_pheno <- file_output[[4]]
     df_covar <- file_output[[5]]
+    if(sample_type == 'F2' & truth_model == T) {
+      df_covar <- summary_df %>% select(ID, Sex) %>% rename(id = ID, sex = Sex)
+      df_covar$cross_direction <- ''
+      df_covar[df_covar$sex == 'female']$cross_direction <- '(AxB)x(AxB)'
+      df_covar[df_covar$sex == 'male']$cross_direction <- '(BxA)x(BxA)'
+      
+    }
     df_foundergeno <- file_output[[6]] # with strain id metadata
-    df_crossinfo <- file_output[[7]]
+    if (!sample_type == 'F2' & truth_model == T) {
+      df_crossinfo <- file_output[[7]]
+    }
     founder_haplo_lookup <- file_output[[8]]
+    
+  if (sample_type == 'BXD' && truth_model == T) {
+    df_crossinfo <- df_crossinfo %>% select(id)
+    df_crossinfo$cross_direction <- 'BxD'
+    
+    control_file <- paste0('{
+    "description": "HaploQA data - qtl2 test run",
+    "crosstype": "', config_sample$truth_model, '",
+    "sep": ",",
+    "na.strings": ["-", "NA"],
+    "comment.char": "#",
+    "geno": "test_geno.csv",
+    "founder_geno": "test_foundergeno.csv",
+    "gmap": "test_gmap.csv",
+    "pmap": "test_pmap.csv",
+    "pheno": "test_pheno.csv",
+    "covar": "test_covar.csv",
+    "genotypes": {
+      "A": 1,
+      "H": 2,
+      "B": 3
+    },
+    "x_chr": "X",
+    "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, n_founders)]))),2), '], 
+    "geno_transposed": true,
+    "founder_geno_transposed": true,
+    "sex": {
+      "covar": "Sex",
+      "female": "female",
+      "male": "male"
+    },
+    "cross_info": {
+      "file": "test_crossinfo.csv",
+      "BxD": 0
+    }
+  }')
+  }
     
   if (qtl2_file_gen == T) {
     # write out files
@@ -1031,12 +1160,14 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
     write.csv(df_pheno, paste0(qtl2_dir, '/test_pheno.csv'), row.names = F)
     write.csv(df_covar, paste0(qtl2_dir, '/test_covar.csv'), row.names = F)
     write.csv(df_foundergeno, paste0(qtl2_dir, '/test_foundergeno.csv'), row.names = F)
-    write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
+    if (!sample_type == 'F2' & truth_model == T) {
+      write.csv(df_crossinfo, paste0(qtl2_dir, '/test_crossinfo.csv'), row.names = F)
+    }
     writeLines(control_file, control_fp)
   }
   
   ### get results for the sample
-  results <- save_rds(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup)
+  results <- save_rds(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model)
   
   return(results)
 }
@@ -1456,7 +1587,7 @@ geno2intervals <- function(geno, map) {
 
 
 xo_number_plot <- function(sample_result) {
-  #sample_result <- cc_results
+  sample_result <- cc_results
   sample_type <- toupper(strsplit(deparse(substitute(sample_result)), '_')[[1]][1])
   pos_haploqa_do <- locate_xo(sample_result[['ginf_haploqa']], sample_result[['map']])
   pos_qtl2_do <- sample_result[['pos']]
@@ -1667,5 +1798,409 @@ geno_align <- function(df, n_founders) {
   df <- df[ ,founder_codes]
   
   return(df)
+}
+
+geno_all_comp <- function(sample_type, sample_results, truth_results) {
+  num_chr <- c((1:19),"X")
+  #sample <- '6UY'
+  #sample_type <- 'CC'
+ # sample_results <- cc_results
+  #truth_results <- cc_truth_results
+  founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
+  founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
+  
+  config <- fread(paste0(root, '/annotations_config.csv'))
+  config_sample <- config[config$array_type == sample_type]
+  qtl2_dir <- file.path(root, config_sample$qtl2_dir)
+  df_cov <- fread(file.path(qtl2_dir, 'test_covar.csv')) %>% rename('sample_id' = 'id')
+  data_dir <- paste0(root, '/', config_sample$data_dir)
+  summary_df <- fread(paste0(data_dir, '/', sample_type, '_summary.csv'))
+  
+  foundergeno <- fread(file.path(qtl2_dir, 'test_foundergeno.csv'))
+  map <- fread(file.path(qtl2_dir, 'test_gmap.csv'))
+  founder_geno_map <- merge(foundergeno, map, by = 'marker') 
+  
+  haploqa_diplotype <- get_haplotypes(summary_df, data_dir)
+  
+  ## make dictionary
+  if (sample_type %in% c('CC', 'DO')) { ### change this to sample_type in CC or DO, they are special conditions
+    founders_dict <- fread(paste0(root, '/founder_strains_table.csv'))
+    founder_haplo_lookup <- setNames(founders_dict$letter, founders_dict$founder_strain)
+  } else {
+    unique_haplotypes <- unique(haploqa_diplotype[,c(haplotype1, haplotype2)])
+    founder_haplo_lookup <- setNames(LETTERS[seq(1, length(unique(unique_haplotypes)))], unique(unique_haplotypes))
+  }
+  
+  raw_geno_df <- haploqa_diplotype %>% select(sample_id, snp_id, haplotype1, haplotype2, chromosome) %>% unique()
+  raw_geno_df[,c(3,4)] <- as.data.frame(apply(raw_geno_df[,c(3,4)], 2, function(x) founder_haplo_lookup[x]))
+  raw_geno_df <- merge(raw_geno_df, df_cov, by = 'sample_id')
+  raw_geno_df[(raw_geno_df$chromosome == 'X') & (raw_geno_df$Sex == 'male')]$haplotype2 <- 'Y'
+  raw_geno_df$haplotype <- paste(raw_geno_df$haplotype2, raw_geno_df$haplotype1, sep='')
+  raw_geno_df <- raw_geno_df %>% select(sample_id, snp_id, chromosome, haplotype)
+  raw_geno_df[,4] <- lapply(raw_geno_df[,4], function(col) {
+    rev_col = stri_reverse(col)
+    ifelse(rev_col %in% founder_all_rev_lookup, rev_col, col)
+  })
+  
+  
+  founder_all_lookup <- setNames(names(founder_all_rev_lookup), founder_all_rev_lookup) # limit the lookup table
+  founder_all_lookup <- founder_all_lookup[names(founder_all_lookup) %in% unique(raw_geno_df$haplotype)]
+  founder_all_lookup <- setNames(LETTERS[seq(1, length(unique(raw_geno_df$haplotype)))], seq(1, length(unique(raw_geno_df$haplotype))))
+  
+  df_geno_all_chr <- list()
+  
+  for (chr in num_chr) {
+    #chr <- 1
+    
+    print(chr)
+    ## raw geno
+    raw_geno_acgt <- get_raw_geno(sample_type, chromosome = chr)
+    raw_geno_chr_acgt <- raw_geno_acgt #%>% filter(sample_id == sample)
+    
+    haploqa_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
+    #haploqa_mom$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,1])
+    #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
+    haploqa_dad <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
+    #haploqa_dad$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,2])
+    sample_geno <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
+    sample_geno$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,1])
+    sample_geno <- melt(sample_geno, id.vars = c("marker")) %>% rename(sample_id = variable, haplo_diplotype = value)
+    
+    haploqa_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
+    #haploqa_mom$marker <- colnames(sample_results[['ph_geno']][[chr]][,,1])
+    #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
+    haploqa_dad <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
+    #haploqa_dad$marker <- colnames(sample_results[['ph_geno']][[chr]][,,2])
+    #haploqa_dad <- haploqa_dad %>% rename(haploqa_dad = 1)
+    sample_geno_qtl2 <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
+    sample_geno_qtl2$marker <- colnames(sample_results[['ph_geno']][[chr]][,,1])
+    sample_geno_qtl2 <- melt(sample_geno_qtl2, id.vars = c("marker")) %>% rename(sample_id = variable, qtl2_calls = value)
+
+    # only need qtl2 for truth models
+    if(is.na(dim(truth_results[['ph_geno_haploqa']][[chr]])[3])) {
+      sample_geno_truth <- as.data.frame(apply(as.data.frame(truth_results[['ph_geno_haploqa']][[chr]]), 1, function(x) founder_all_rev_lookup[x]))
+      sample_geno_truth$marker <- colnames(truth_results[['ph_geno_haploqa']][[chr]])
+      sample_geno_truth <- melt(sample_geno_truth, id.vars = c("marker")) %>% rename(sample_id = variable, qtl2_calls_truth = value)
+      
+      #haploqa_df
+    } else {
+      haploqa_mom <- as.data.frame(apply(as.data.frame(truth_results[['ph_geno']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
+      #haploqa_mom$marker <- colnames(truth_results[['ph_geno_haploqa']][[chr]][,,1])
+      #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
+      haploqa_dad <- as.data.frame(apply(as.data.frame(truth_results[['ph_geno']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
+      #haploqa_dad$marker <- colnames(truth_results[['ph_geno_haploqa']][[chr]][,,2])
+      #haploqa_dad <- haploqa_dad %>% rename(haploqa_dad = 1)
+      sample_geno_truth <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
+      sample_geno_truth$marker <- colnames(truth_results[['ph_geno']][[chr]][,,1])
+      sample_geno_truth <- melt(sample_geno_truth, id.vars = c("marker")) %>% rename(sample_id = variable, qtl2_calls_truth = value)
+
+    }
+    
+    df_geno_all_acgt <- merge(merge(merge(raw_geno_chr_acgt, sample_geno, by = c('marker', 'sample_id'), sort = F), sample_geno_qtl2, by = c('marker', 'sample_id'), sort = F), sample_geno_truth, by = c('marker', 'sample_id'), sort = F) %>% select(marker, sample_id, chr, pos, everything())
+    #df_geno_all_acgt$is_different <- NA
+    
+    df_geno_all_acgt[,6:ncol(df_geno_all_acgt)] <- lapply(df_geno_all_acgt[,6:ncol(df_geno_all_acgt)], function(col) {
+      rev_col = stri_reverse(col)
+      ifelse(rev_col %in% founder_all_rev_lookup, rev_col, col)
+    })
+    
+    #df_geno_all_acgt <- rbindlist(df_geno_all_acgt)  # in theory the things we get from haploqa are the same fir both truth and AIL model
+    
+    #ind <- which(df_geno_all_acgt$qtl2_calls_truth != df_geno_all_acgt$qtl2_calls | df_geno_all_acgt$qtl2_calls_truth != df_geno_all_acgt$haplo_diplotype)
+    #df_geno_all_acgt[ind,]$is_different <- TRUE
+    #ind <- which(df_geno_all_acgt$haplo_diplotype_truth != df_geno_all_acgt$qtl2_calls | df_geno_all_acgt$qtl2_calls_truth != df_geno_all_acgt$qtl2_calls )
+    #list_xo <- list()
+    
+   # if (length(ind) > 0) {
+      #list <- split(ind, cumsum(c(1, diff(ind) != 1)))
+      #for (i in seq(1, length(list))) {
+        #i <- 9
+       # inds <- c(min(list[[i]]), max(list[[i]])+1)
+        
+        #list_xo <- c(inds, list_xo)
+      #}
+      #list_xo <- sort(unlist(list_xo))
+    #}
+    
+    #rows <- unique(unlist(lapply(ind, function(x) (x-20):(x+20))))
+    #rows <- rows[(rows > 0) & (rows < nrow(df_geno_all_acgt))]
+    #if (length(rows) > 0) {
+     # df_geno_all_acgt[list_xo,]$is_crossover <- 1
+      #df_geno_xo <- df_geno_all_acgt[rows,]
+      
+    #   df_geno_xo[is.na(df_geno_xo$is_crossover),]$is_crossover <- 0
+    #   
+    #   df_geno_xo$original_row <- rows # always 41 - 20 above, 20 below, and crossover itself
+    #   df_geno_xo$crossover_group <- NA
+    #   df_geno_xo$crossover_group <- as.character(df_geno_xo$crossover_group)
+    #   
+    #   iter <- 1
+    #   for (i in which(diff(df_geno_xo$original_row) > 1)) {
+    #     # i <- 41
+    #     
+    #     df_geno_xo[1:i][is.na(df_geno_xo[1:i]$crossover_group)]$crossover_group <- LETTERS[iter]
+    #     iter <- iter+1
+    #   }
+    #   df_geno_xo$crossover_group[is.na(df_geno_xo$crossover_group)] <- LETTERS[iter]
+    #   df_geno_xo$crossover_groups <- paste(df_geno_xo$crossover_group, df_geno_xo$chr, sep='')
+    #   df_geno_xo <- df_geno_xo %>% select(-any_of(c("crossover_group")))
+    #   df_geno_xo <- merge(df_geno_xo, founder_geno_map, by = c('marker', 'chr', 'pos'))
+    #   
+    # } else {
+    #   df_geno_xo <- data.frame()
+    # }
+    # 
+    
+    df_geno_all_chr[[chr]] <- df_geno_all_acgt
+  }
+  
+  return(df_geno_all_chr)
+}
+
+
+
+## pipeline for one
+sample_haplotype_reconstruction <- function(sample_type, sample_name, samples_gen, qtl2_file_gen) {
+  ## results directory
+  results_dir <- file.path(root, 'results')
+  dir.create(results_dir, showWarnings = FALSE) 
+  
+  num_chr <- c((1:19),"X")
+  
+  ### config file
+  config <- fread(paste0(root, '/annotations_config.csv'))
+  
+  ### Environment
+  config_sample <- config[config$array_type == sample_type]
+  marker_type <- config_sample$marker_type
+  founders_list <- unlist(strsplit(config_sample$founders_list, ", "))
+  n_founders <- length(founders_list)
+  ngen <- config_sample$ngen
+  sample_url <- config_sample$url
+  founder_url <- config_sample$founder_url
+  
+  # data output directory
+  data_dir <- file.path(root, config_sample$data_dir)
+  dir.create(data_dir, showWarnings = FALSE) 
+  
+  ## create a data directory for qtl2 input data
+  qtl2_dir <- file.path(root, config_sample$qtl2_dir) # name of desired output folder
+  # create if folder not exist
+  dir.create(qtl2_dir, showWarnings = FALSE)
+  
+  # filepaths to save any rds file
+  rds_dir <- file.path(results_dir, 'RDS')
+  dir.create(rds_dir, showWarnings = FALSE)
+  
+  # annotation file
+  annot_file <- config_sample$annot_file
+  
+  ### sample folder
+  sample_dir <- file.path(qtl2_dir, sample_name)
+  dir.create(sample_dir, showWarnings = FALSE)
+  
+  ### control file
+  control_fp <- paste0(sample_dir, '/test.json')
+  if (file.exists(control_fp) == FALSE) {
+    file.create(control_fp)
+  }
+  
+  
+  ## summary file
+  summary_df_fp <- paste0(sample_dir, '/', sample_type, '_', sample_name, '_summary.csv')
+  
+  ## list of samples to exclude, if any
+  exclude_list <- unlist(strsplit(config_sample$exclude_samples, ", "))
+  
+  
+  ###############################################################################
+  ### Part 1 - get results from HaploQA
+  # set main URL domain
+  url_domain <- 'http://haploqa-dev.jax.org/' 
+  
+  #### implementations
+  # summary table
+  if (!file.exists(summary_df_fp)) {
+    print(paste0('Working on summary file:'))
+    #### html file prep
+    # read html file
+    haploqa_html <- read_html(sample_url)
+    # extract information from html file
+    html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+    url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+    summary_df <- sample_summary_scrape(haploqa_html, url_list, marker_type)
+    summary_df <- summary_df[summary_df$ID == sample_name,]
+    print('Writing to directory')
+    write.csv(summary_df, summary_df_fp, row.names = FALSE)
+    
+  } else {
+    summary_df <- fread(summary_df_fp)
+    summary_df <- summary_df[summary_df$ID == sample_name,]
+  }
+  
+  #url_ind <- url_ind[!url_ind %in% exclude_list]
+  
+  if(samples_gen == T) {
+    #### html file prep
+    # read html file
+    haploqa_html <- read_html(sample_url)
+    # extract information from html file
+    html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+    url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+    
+    # list of urls to generate samples from
+    url_ind <- unique(summary_df$`Sample Filepath`)
+    
+    # individual samples
+    inc = 0
+    for (url in url_ind) {
+      inc = inc + 1 # increment
+      file <- sample_individual_scrape(url, url_domain)
+      print(paste0('Working on file ', inc, '/', length(url_ind), ': ', file))
+      sample_df_save <- as.data.frame(content(GET(file)))
+      print('Writing to directory')
+      file_name <- unlist(strsplit(file, '/'))[6]
+      GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
+    }
+  }
+  
+  file_output <- get_qtl2_input(data_dir, sample_type, annot_file, qtl2_dir, summary_df, list_pheno, ngen, founders_list, marker_type, exclude_list = NULL, founder_url)
+  # unpack
+  df_geno <- file_output[[1]]
+  df_gmap <- file_output[[2]]
+  df_gmap <- sort_chr(df_gmap, c((1:19),"X")) # put chromosomes in order
+  df_pmap <- file_output[[3]]
+  df_pmap <- sort_chr(df_pmap, c((1:19),"X"))
+  df_pheno <- file_output[[4]]
+  df_covar <- file_output[[5]]
+  df_foundergeno <- file_output[[6]] # with strain id metadata
+  df_crossinfo <- file_output[[7]]
+  founder_haplo_lookup <- file_output[[8]]
+  
+  
+  ## unique foundergeno situation
+  
+  if(sample_type == 'MiniMUGA') {
+    url_domain <- 'http://haploqa-dev.jax.org/' 
+    haploqa_html <- read_html(sample_url)
+    # extract information from html file
+    html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+    url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+    founder_sum <- sample_summary_scrape(haploqa_html, url_list, marker_type)
+    founder_sum <- founder_sum[founder_sum$`Haplotype Candidate` == 'True',] %>% rename(sample_id = ID, original_sample_id = 'Secondary IDs')
+    fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
+    if (file.exists(fp_founders)) {
+      founders_total <- fread(fp_founders)
+    } else { 
+      founders_total <- get_founder_data(sample_url, founder_sum$`Sample Filepath`)
+      write.csv(founders_total, fp_founders, row.names = F)
+    }
+    
+    founders_list <- names(founder_haplo_lookup)
+    
+    founders_df <- merge(founders_total, founder_sum, by = 'original_sample_id') %>% 
+      mutate(gene_exp = paste(allele1_fwd, allele2_fwd, sep = '')) %>%
+      rename(sample_id = 'sample_id.y') %>%
+      select('sample_id', 'snp_id', 'gene_exp', 'Strain Name', 'original_sample_id')
+    
+    founders_test <- founders_df[founders_df$`Strain Name` %in% founders_list,]
+    haplo_lookup <- data.frame(strain=names(founder_haplo_lookup), letter=founder_haplo_lookup) %>% rename('Strain Name'=strain)
+    founders_test <- merge(founders_test, haplo_lookup, by = 'Strain Name')
+    
+    test_foundergeno <- founders_test %>% select(snp_id, letter, gene_exp) %>% 
+      rename(strain = letter, marker = snp_id)
+    test_foundergeno <- dcast(test_foundergeno, marker~strain, value.var="gene_exp")
+    rownames(test_foundergeno) <- test_foundergeno$marker
+    
+    # put the allele annotations in according order
+    ### read annotations
+    dir <- "https://raw.githubusercontent.com/kbroman/MUGAarrays/main/UWisc/" # always the same
+    annot_df <- read.csv(paste0(dir, annot_file))
+    # encode_genome function on geno and founder from qtl2 convert package - args: matrix of genotypes, matrixs of two alleles
+    annot_encode_df <- annot_df %>% select(marker, chr, snp) %>% # select allele columns
+      separate(snp, c("allele1", "allele2"), sep=cumsum(c(1)))
+    founder_encode_annot <- merge(annot_encode_df, test_foundergeno, by = 'marker') %>% select(allele1, allele2)
+    df_founders_encoded <- as.data.frame(encode_geno(test_foundergeno[,-1], founder_encode_annot))
+    df_founders_encoded$marker <- rownames(test_foundergeno)
+    marker_order <- unique(df_gmap$marker)
+    df_founders_encoded <- df_founders_encoded %>% filter(marker %in% marker_order) %>% arrange(factor(marker, levels = marker_order))
+    df_foundergeno <- df_founders_encoded %>% select(marker, everything())
+  }
+  
+  ## text of control file
+  ### alleles need to be consistent with genail
+  control_file <- paste0('{
+  "description": "HaploQA data - qtl2 test run",
+  "crosstype": "genail', length(founder_haplo_lookup), '",
+  "sep": ",",
+  "na.strings": ["-", "NA"],
+  "comment.char": "#",
+  "geno": "test_geno.csv",
+  "founder_geno": "test_foundergeno.csv",
+  "gmap": "test_gmap.csv",
+  "pmap": "test_pmap.csv",
+  "pheno": "test_pheno.csv",
+  "covar": "test_covar.csv",
+  "genotypes": {
+    "A": 1,
+    "H": 2,
+    "B": 3
+  },
+  "x_chr": "X",
+  "alleles": [', substring(gsub("[()]", "", toString(list(LETTERS[seq(1, length(founder_haplo_lookup))]))),2), '], 
+  "geno_transposed": true,
+  "founder_geno_transposed": true,
+  "sex": {
+    "covar": "Sex",
+    "female": "female",
+    "male": "male"
+  },
+  "cross_info": {
+    "file": "test_crossinfo.csv"
+  }
+}')
+  
+  # output
+  if (qtl2_file_gen == T) {
+    # write out files
+    write.csv(df_geno, paste0(sample_dir, '/test_geno.csv'), row.names = F)
+    write.csv(df_gmap, paste0(sample_dir, '/test_gmap.csv'), row.names = F)
+    write.csv(df_pmap, paste0(sample_dir, '/test_pmap.csv'), row.names = F)
+    write.csv(df_pheno, paste0(sample_dir, '/test_pheno.csv'), row.names = F)
+    write.csv(df_covar, paste0(sample_dir, '/test_covar.csv'), row.names = F)
+    write.csv(df_foundergeno, paste0(sample_dir, '/test_foundergeno.csv'), row.names = F)
+    write.csv(df_crossinfo, paste0(sample_dir, '/test_crossinfo.csv'), row.names = F)
+    writeLines(control_file, control_fp)
+  }
+  
+  founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
+  founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
+  
+  # calculations
+  cross_list <- list()
+  cross_file <- read_cross2(control_fp)
+  cross_list[['cross']] <- cross_file
+  pr <- calc_genoprob(cross=cross_file, map=cross_file$gmap, error_prob=0.002, cores = 2)
+  cross_list[['pr']] <- pr
+  ginf <- maxmarg(pr, minprob = 0.01)
+  cross_list[['ginf']] <- ginf
+  ph_geno <- guess_phase(cross_file, ginf)
+  cross_list[['ph_geno']] <- ph_geno
+  pos <- locate_xo(ginf, cross_file$gmap)
+  cross_list[['pos']] <- pos
+  
+  ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_rev_lookup, cross = cross_file, sample_dir, sample_type, n_founders, founder_haplo_lookup)
+  cross_list[['ginf_haploqa']] <- ginf_haploqa
+  ph_geno_haploqa <- guess_phase(cross_file, ginf_haploqa)
+  cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
+  
+  ph_geno_fp <- file.path(sample_dir, 'ph_geno.rds')
+  ph_geno_haploqa(map, file = ph_geno_fp)
+  
+  # plot_onegeno_test(ph_geno, ph_geno_haploqa, cross_file$gmap, ind = 1, 
+  # shift = TRUE, main = paste0('Geno-wide genotypes of individual ', '1'),
+  # sub = 'Left - qtl2, Right - HaploQA')
+  print(cross_list)
+  return(cross_list)
 }
 
