@@ -107,40 +107,65 @@ saveRDS(f2_genoprob, file = file.path(root, 'genoprob_f2_founder.rds'))
 minimuga_results <- haplotype_reconstruction_pipeline('MiniMUGA', list_pheno, qtl2_file_gen = T, samples_gen = T)
 
 
-rows_diff <- list()
+qtl2_diff <- list()
+haploqa_diff <- list()
 do_comp_csv <- geno_all_comp('DO', do_results, do_truth_results)
 do_comp_csv <- rbindlist(do_comp_csv)
-ind <- which(do_comp_csv$qtl2_calls_truth != do_comp_csv$qtl2_calls | do_comp_csv$qtl2_calls_truth != do_comp_csv$haplo_diplotype)
-do_comp_csv$is_different <- NA
-do_comp_csv[ind,]$is_different <- TRUE
-rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(do_comp_csv)))
-
+#ind_qtl2_diff <- which(do_comp_csv$qtl2_calls_truth != do_comp_csv$qtl2_calls)
+#ind_haploqa_diff <- which(do_comp_csv$qtl2_calls_truth != do_comp_csv$haplo_diplotype)
+#do_comp_csv$is_different <- NA
+#do_comp_csv[ind,]$is_different <- TRUE
+qtl2_diffs <- do_comp_csv %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(qtl2_calls_truth != qtl2_calls)/n()) %>% as.data.frame()
+haploqa_diffs <- do_comp_csv %>% group_by(sample_id) %>% summarise(haploqa_pct_diff = sum(qtl2_calls_truth != haplo_diplotype)/n()) %>% as.data.frame()
+sample_diffs <- merge(qtl2_diffs, haploqa_diffs, by = 'sample_id')
+write.csv(sample_diffs, file.path(root, 'do_truth_comp.csv'), row.names = F)
 
 cc_comp_csv <- geno_all_comp('CC', cc_results, cc_truth_results)
 cc_comp_csv <- rbindlist(cc_comp_csv)
-ind <- which(cc_comp_csv$qtl2_calls_truth != cc_comp_csv$qtl2_calls | cc_comp_csv$qtl2_calls_truth != cc_comp_csv$haplo_diplotype)
-cc_comp_csv$is_different <- NA
-cc_comp_csv[ind,]$is_different <- TRUE
-rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(cc_comp_csv)))
+#ind <- which(cc_comp_csv$qtl2_calls_truth != cc_comp_csv$qtl2_calls | cc_comp_csv$qtl2_calls_truth != cc_comp_csv$haplo_diplotype)
+#cc_comp_csv$is_different <- NA
+#cc_comp_csv[ind,]$is_different <- TRUE
+#ind_qtl2_diff <- which(cc_comp_csv$qtl2_calls_truth != cc_comp_csv$qtl2_calls)
+#ind_haploqa_diff <- which(cc_comp_csv$qtl2_calls_truth != cc_comp_csv$haplo_diplotype)
+#qtl2_diff <- append(qtl2_diff, as.numeric(length(ind_qtl2_diff)/nrow(cc_comp_csv)))
+#haploqa_diff <- append(haploqa_diff, as.numeric(length(ind_haploqa_diff)/nrow(cc_comp_csv)))
+qtl2_diffs <- cc_comp_csv %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(qtl2_calls_truth != qtl2_calls)/n()) %>% as.data.frame()
+haploqa_diffs <- cc_comp_csv %>% group_by(sample_id) %>% summarise(haploqa_pct_diff = sum(qtl2_calls_truth != haplo_diplotype)/n()) %>% as.data.frame()
+sample_diffs <- merge(qtl2_diffs, haploqa_diffs, by = 'sample_id')
+write.csv(sample_diffs, file.path(root, 'cc_truth_comp.csv'), row.names = F)
 
 
 bxd_comp_csv <- geno_all_comp('BXD', bxd_results, bxd_truth_results) 
 bxd_comp_csv <- rbindlist(bxd_comp_csv)
-ind <- which(bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$qtl2_calls | bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$haplo_diplotype)
-bxd_comp_csv$is_different <- NA
-bxd_comp_csv[ind,]$is_different <- TRUE
-rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(bxd_comp_csv)))
+#haploqa_diff <- append(haploqa_diff, as.numeric(length(ind_haploqa_diff)/nrow(cc_comp_csv)))
+qtl2_diffs <- bxd_comp_csv %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(qtl2_calls_truth != qtl2_calls)/n()) %>% as.data.frame()
+haploqa_diffs <- bxd_comp_csv %>% group_by(sample_id) %>% summarise(haploqa_pct_diff = sum(qtl2_calls_truth != haplo_diplotype)/n()) %>% as.data.frame()
+sample_diffs <- merge(qtl2_diffs, haploqa_diffs, by = 'sample_id')
+write.csv(sample_diffs, file.path(root, 'bxd_truth_comp.csv'), row.names = F)
+#ind <- which(bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$qtl2_calls | bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$haplo_diplotype)
+#bxd_comp_csv$is_different <- NA
+#bxd_comp_csv[ind,]$is_different <- TRUE
+#rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(bxd_comp_csv)))
+#ind_qtl2_diff <- which(bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$qtl2_calls)
+#ind_haploqa_diff <- which(bxd_comp_csv$qtl2_calls_truth != bxd_comp_csv$haplo_diplotype)
+#qtl2_diff <- append(qtl2_diff, as.numeric(length(ind_qtl2_diff)/nrow(bxd_comp_csv)))
+#haploqa_diff <- append(haploqa_diff, as.numeric(length(ind_haploqa_diff)/nrow(bxd_comp_csv)))
 
 
 f2_comp_csv <- geno_all_comp('F2', f2_results, f2_truth_results) 
 f2_comp_csv <- rbindlist(f2_comp_csv)
-ind <- which(f2_comp_csv$qtl2_calls_truth != f2_comp_csv$qtl2_calls | f2_comp_csv$qtl2_calls_truth != f2_comp_csv$haplo_diplotype)
-f2_comp_csv$is_different <- NA
-f2_comp_csv[ind,]$is_different <- TRUE
-rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(f2_comp_csv)))
+#ind <- which(f2_comp_csv$qtl2_calls_truth != f2_comp_csv$qtl2_calls | f2_comp_csv$qtl2_calls_truth != f2_comp_csv$haplo_diplotype)
+#f2_comp_csv$is_different <- NA
+#f2_comp_csv[ind,]$is_different <- TRUE
+#rows_diff <- append(rows_diff, as.numeric(length(ind)/nrow(f2_comp_csv)))
+ind_qtl2_diff <- which(f2_comp_csv$qtl2_calls_truth != f2_comp_csv$qtl2_calls)
+ind_haploqa_diff <- which(f2_comp_csv$qtl2_calls_truth != f2_comp_csv$haplo_diplotype)
+qtl2_diff <- append(qtl2_diff, as.numeric(length(ind_qtl2_diff)/nrow(f2_comp_csv)))
+haploqa_diff <- append(haploqa_diff, as.numeric(length(ind_haploqa_diff)/nrow(f2_comp_csv)))
 
 
-sum_pct_markers <- data.frame(sample_type = c('DO', 'CC', 'BXD', 'F2'), pct_marker_diff = unlist(rows_diff))
+
+sum_pct_markers <- data.frame(sample_type = c('DO', 'CC', 'BXD', 'F2'), qtl2_pct_marker_diff = unlist(qtl2_diff), haploqa_pct_marker_diff = unlist(haploqa_diff))
 
 
 sample_geno_1 <- rbindlist(geno_all_comp('35V', 'CC', cc_results))
@@ -236,12 +261,17 @@ comp_matrix <- genocode_comp_matrix(do_results[['map']], do_results[['ginf']], d
 chr_pct <- get_geno_pct_diff(do_results[['ginf']], do_results[['ginf_haploqa']], do_results[['summary']], num_chr, founder_all_rev_lookup)
 
 
-
+minimuga_url <- 'http://haploqa-dev.jax.org/tag/MiniMUGA.html'
+html_table <- read_html(minimuga_url) %>% html_nodes("a") %>% html_attr("href")
+url_list <- paste0(url_domain, html_table[grepl('/sample', html_table)])
+summary_df <- sample_summary_scrape(haploqa_html, url_list, marker_type)
+ind_mini <- summary_df[summary_df$`Haplotype Candidate` == 'False',]$`ID`
+ind_mini <- ind_mini[ind_mini!='JXX'] # screentime error
+ind_mini <- ind_mini[ind_mini!='JY9'] # only 1 contributing strain, AIL incompatible
 ## screentime error: JXX
-sample_res <- sample_haplotype_reconstruction('MiniMUGA', 'JXW', samples_gen = F, qtl2_file_gen = F)
+for (ind in ind_mini) {
+  print(ind)
+  sample_haplotype_reconstruction('MiniMUGA', ind, samples_gen = T, qtl2_file_gen = T)
+}
 
-sample_res_1 <- sample_haplotype_reconstruction('MiniMUGA', 'JXQ', samples_gen = F, qtl2_file_gen = F)
-
-
-truth_comp_
   

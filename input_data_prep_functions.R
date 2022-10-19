@@ -297,21 +297,39 @@ qtl2_ci <- function(summary_df, ngen, founder_haplo_lookup) {
 #
 # @return founders_total (data.frame) - combined dataframe with all founder individual files
 # columns of founders_total: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2
-get_founder_data <- function(founder_url, url_list) {
+get_founder_data <- function(founder_url, url_list, sample_type) {
   # get length to keep track of progress
   iter_len <- length(url_list)
   # loop through urls to extract individual files
-  founders_total = data.frame() # container
-  inc = 0
-  for (url in url_list) {
-    file <- sample_individual_scrape(url, url_domain) # call function from another script
-    inc = inc+1 # track progress
-    print(paste0('working on file ', inc, '/', iter_len, ' ', file))
-    df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
-    founders_total <- rbind(founders_total,df_temp)
+  #founders_total = data.frame() # container
+  founders_sample_dir <- paste0(data_dir, '/', sample_type, '_founders/')
+  dir.create(founders_sample_dir, showWarnings = FALSE) 
+  
+  fp_founders <- paste0(root, '/', sample_type, '_founder_samples.csv')
+  if (file.exists(fp_founders)) {
+    founders_total <- fread(fp_founders)
+  } else { 
+    inc = 0
+    for (url in url_list) {
+      file <- sample_individual_scrape(url, url_domain) # call function from another script
+      inc = inc+1 # track progress
+      print(paste0('working on file ', inc, '/', iter_len, ' ', file))
+      df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
+      file_name <- unlist(strsplit(file, '/'))[6]
+      print('Writing to directory')
+      #founders_total <- rbind(founders_total,df_temp)
+      GET(file, write_disk(file.path(founders_sample_dir, file_name), overwrite = TRUE), show_col_types = FALSE)
+    }
+    
+    founder_data_files <- dir(founders_sample_dir, pattern = '\\.txt$', full.names = TRUE)
+    ### combine all files
+    founders_total <- rbindlist(lapply(founder_data_files, read_sample_txt))
+    write.csv(founders_total, fp_founders, row.names = F)
   }
   
- return(founders_total)
+  
+  return(founders_total)
+  
 }
 
 # function to retrieve only the dataframe that all qtl2 input dataframes were based on for testing purposes, and/or the haplotype columns
@@ -442,22 +460,24 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
     if (file.exists(fp_founders)) {
       founders_total <- fread(fp_founders)
     } else { 
-      founders_total <- get_founder_data(founder_url, url_list)
+      founders_total <- get_founder_data(founder_url, url_list, sample_type)
       write.csv(founders_total, fp_founders, row.names = F)
     }
+    
+    df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup, sample_type)
+
   }
   
   if (sample_type %in% c('MiniMUGA')) {
-    fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
-    if (file.exists(fp_founders)) {
-      founders_total <- fread(fp_founders)
-    } else { 
-      founders_total <- get_founder_data(founder_url, url_list)
-      write.csv(founders_total, fp_founders, row.names = F)
-    }
+    #fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
+   # if (file.exists(fp_founders)) {
+    #  founders_total <- fread(fp_founders)
+    #} else { 
+    #  founders_total <- get_founder_data(founder_url, url_list, sample_type)
+    #  write.csv(founders_total, fp_founders, row.names = F)
+    #}
+    df_founders_encoded <- data.frame() # set as empty for minimuga
   }  
-  df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup, sample_type)
-  # store in output
   file_output[[6]] <- df_founders_encoded 
   print('founder geno data done')
   
@@ -1105,8 +1125,9 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
     if(sample_type == 'F2' & truth_model == T) {
       df_covar <- summary_df %>% select(ID, Sex) %>% rename(id = ID, sex = Sex)
       df_covar$cross_direction <- ''
-      df_covar[df_covar$sex == 'female']$cross_direction <- '(AxB)x(AxB)'
-      df_covar[df_covar$sex == 'male']$cross_direction <- '(BxA)x(BxA)'
+      df_covar$cross_direction <- '(AxB)x(AxB)'
+      #df_covar[df_covar$sex == 'female']$cross_direction <- '(AxB)x(AxB)'
+      #df_covar[df_covar$sex == 'male']$cross_direction <- '(BxA)x(BxA)'
       
     }
     df_foundergeno <- file_output[[6]] # with strain id metadata
@@ -1800,12 +1821,14 @@ geno_align <- function(df, n_founders) {
   return(df)
 }
 
+### each cross separate table, summ for each mouse
+## zip up f2 input files
 geno_all_comp <- function(sample_type, sample_results, truth_results) {
   num_chr <- c((1:19),"X")
-  #sample <- '6UY'
-  #sample_type <- 'CC'
- # sample_results <- cc_results
-  #truth_results <- cc_truth_results
+  sample <- '6UY'
+  sample_type <- 'DO'
+  sample_results <- do_results
+  truth_results <- do_truth_results
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
@@ -1850,7 +1873,7 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
   df_geno_all_chr <- list()
   
   for (chr in num_chr) {
-    #chr <- 1
+    chr <- 1
     
     print(chr)
     ## raw geno
@@ -2089,13 +2112,9 @@ sample_haplotype_reconstruction <- function(sample_type, sample_name, samples_ge
     founder_sum <- sample_summary_scrape(haploqa_html, url_list, marker_type)
     founder_sum <- founder_sum[founder_sum$`Haplotype Candidate` == 'True',] %>% rename(sample_id = ID, original_sample_id = 'Secondary IDs')
     fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
-    if (file.exists(fp_founders)) {
-      founders_total <- fread(fp_founders)
-    } else { 
-      founders_total <- get_founder_data(sample_url, founder_sum$`Sample Filepath`)
-      write.csv(founders_total, fp_founders, row.names = F)
-    }
     
+    founders_total <- get_founder_data(sample_url, founder_sum$`Sample Filepath`, sample_type)
+
     founders_list <- names(founder_haplo_lookup)
     
     founders_df <- merge(founders_total, founder_sum, by = 'original_sample_id') %>% 
@@ -2108,7 +2127,7 @@ sample_haplotype_reconstruction <- function(sample_type, sample_name, samples_ge
     founders_test <- merge(founders_test, haplo_lookup, by = 'Strain Name')
     
     test_foundergeno <- founders_test %>% select(snp_id, letter, gene_exp) %>% 
-      rename(strain = letter, marker = snp_id)
+      rename(strain = letter, marker = snp_id) %>% unique()
     test_foundergeno <- dcast(test_foundergeno, marker~strain, value.var="gene_exp")
     rownames(test_foundergeno) <- test_foundergeno$marker
     
@@ -2194,13 +2213,22 @@ sample_haplotype_reconstruction <- function(sample_type, sample_name, samples_ge
   ph_geno_haploqa <- guess_phase(cross_file, ginf_haploqa)
   cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
   
+  # save for shiny
+  # map
+  map <- cross_file$gmap
+  map_fp <- file.path(sample_dir, 'map.rds')
+  saveRDS(map, file = map_fp)
+  # qtl2 phased geno
   ph_geno_fp <- file.path(sample_dir, 'ph_geno.rds')
-  ph_geno_haploqa(map, file = ph_geno_fp)
+  saveRDS(ph_geno, file = ph_geno_fp)
+  # haploqa phased geno
+  ph_geno_haploqa_fp <- file.path(sample_dir, 'ph_geno_haploqa.rds')
+  saveRDS(ph_geno_haploqa, file = ph_geno_haploqa_fp)
   
-  # plot_onegeno_test(ph_geno, ph_geno_haploqa, cross_file$gmap, ind = 1, 
-  # shift = TRUE, main = paste0('Geno-wide genotypes of individual ', '1'),
-  # sub = 'Left - qtl2, Right - HaploQA')
-  print(cross_list)
+   #plot_onegeno_test(ph_geno, ph_geno_haploqa, cross_file$gmap, ind = 1, 
+   #shift = TRUE, main = paste0('Geno-wide genotypes of individual ', '1'),
+   #sub = 'Left - qtl2, Right - HaploQA')
+  #print(cross_list)
   return(cross_list)
 }
 
