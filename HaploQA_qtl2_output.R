@@ -117,9 +117,12 @@ do_comp_csv <- rbindlist(do_comp_csv)
 #do_comp_csv[ind,]$is_different <- TRUE
 qtl2_diffs <- do_comp_csv %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(qtl2_calls_truth != qtl2_calls)/n()) %>% as.data.frame()
 haploqa_diffs <- do_comp_csv %>% group_by(sample_id) %>% summarise(haploqa_pct_diff = sum(qtl2_calls_truth != haplo_diplotype)/n()) %>% as.data.frame()
-sample_diffs <- merge(qtl2_diffs, haploqa_diffs, by = 'sample_id')
+qtl2_haploqa_diffs <- do_comp_csv %>% group_by(sample_id) %>% summarise(haploqa_pct_diff = sum(qtl2_calls != haplo_diplotype)/n()) %>% as.data.frame()
+
+sample_diffs <- merge(merge(qtl2_diffs, haploqa_diffs, by = 'sample_id'), qtl2_haploqa_diffs, by = 'sample_id')
 write.csv(sample_diffs, file.path(root, 'do_truth_comp.csv'), row.names = F)
 
+### use this comparison for shiny rows
 cc_comp_csv <- geno_all_comp('CC', cc_results, cc_truth_results)
 cc_comp_csv <- rbindlist(cc_comp_csv)
 #ind <- which(cc_comp_csv$qtl2_calls_truth != cc_comp_csv$qtl2_calls | cc_comp_csv$qtl2_calls_truth != cc_comp_csv$haplo_diplotype)
@@ -266,10 +269,12 @@ html_table <- read_html(minimuga_url) %>% html_nodes("a") %>% html_attr("href")
 url_list <- paste0(url_domain, html_table[grepl('/sample', html_table)])
 summary_df <- sample_summary_scrape(haploqa_html, url_list, marker_type)
 ind_mini <- summary_df[summary_df$`Haplotype Candidate` == 'False',]$`ID`
-ind_mini <- ind_mini[ind_mini!='JXX'] # screentime error
-ind_mini <- ind_mini[ind_mini!='JY9'] # only 1 contributing strain, AIL incompatible
+ind_mini <- ind_mini[ind_mini!='JXX'] # screentime error, skip this one
+ind_mini <- ind_mini[ind_mini!='JY9'] # only 1 contributing strain, AIL incompatible, skip this one as well
+# use J/NJ
 ## screentime error: JXX
 for (ind in ind_mini) {
+  #ind <- 'JXX'
   print(ind)
   sample_haplotype_reconstruction('MiniMUGA', ind, samples_gen = T, qtl2_file_gen = T)
 }

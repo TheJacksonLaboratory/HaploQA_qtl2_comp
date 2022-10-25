@@ -1825,10 +1825,10 @@ geno_align <- function(df, n_founders) {
 ## zip up f2 input files
 geno_all_comp <- function(sample_type, sample_results, truth_results) {
   num_chr <- c((1:19),"X")
-  sample <- '6UY'
-  sample_type <- 'DO'
-  sample_results <- do_results
-  truth_results <- do_truth_results
+  #sample <- '6UY'
+  #sample_type <- 'DO'
+  #sample_results <- do_results
+  #truth_results <- do_truth_results
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
@@ -1873,7 +1873,7 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
   df_geno_all_chr <- list()
   
   for (chr in num_chr) {
-    chr <- 1
+    #chr <- 1
     
     print(chr)
     ## raw geno
