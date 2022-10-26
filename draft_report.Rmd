@@ -1,0 +1,207 @@
+---
+title: "Untitled"
+output: html_document
+date: '2022-10-18'
+---
+
+
+### 1. Introduction
+two different methods of haplotype reconstruction (haploqa vs qtl2)
+  haploqa was written a decade ago, not well-maintained
+  qtl2 is newer method. Since haploqa is not maintained, it's ideal to discontinue. However, before the transition is made, this project is in place
+  to compare the results to ensure the qtl2 outputs can be used as a substitute for the haplotype reconstruction tasks that haploqa is doing.
+  
+  
+```{r}
+source(paste0(root,"/input_data_prep_functions.R"))
+```
+
+  
+### 2. Methods
+
+#### 2.1. Environment Set-up
+
+The calculation is being done for 5 samples in GigaMUGA (Collaborative Cross, Diversity Outbred, F3, F2, <another one TBD>), and the MiniMUGA sample. A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all the relevant file paths associated with each cross. A preview of the configuration file is shown as below:
+
+
+```{r}
+root <- dirname(rstudioapi::getSourceEditorContext()$path)
+config <- fread(paste0(root, '/annotations_config.csv'))
+config
+```
+
+Below is an example of the pipeline for CC:
+```{r}
+sample_type <- 'CC'
+### Environment
+config_sample <- config[config$array_type == sample_type]
+marker_type <- config_sample$marker_type
+founders_list <- unlist(strsplit(config_sample$founders_list, ", "))
+n_founders <- length(founders_list)
+ngen <- config_sample$ngen
+sample_url <- config_sample$url
+founder_url <- config_sample$founder_url
+
+# data output directory
+data_dir <- file.path(root, config_sample$data_dir)
+```
+
+
+#### 2.2. Data Retrieval 
+
+The pipeline takes the according data_dir, or qtl2_dir values for each cross, concatenate the variable values with the working directory (which is the directory where the functions are stored in), and read in/output files from the directories. 
+
+
+Input data was retrieved from haploqa.jax.org, and converted into the required input format for qtl2. There are two parts of data wrangling tasks:
+1. scrapes the HTML elements of the haploqa website and downloads the SNP level reports automatically for each individual within each cross
+2. concatenate the individuals within each cross into a single genotype file, converts the genotype file into the required input file for qtl2
+
+For example, for cross 'Collaborative Cross', the URL to the sample is http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html 
+
+The 'sample_summary_scrape' function reads the html elements of the website, (?)
+
+```{r}
+## summary file
+haploqa_html <- read_html(sample_url)
+# extract information from html file
+html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+summary_df <- sample_summary_scrape(haploqa_html, url_list, marker_type)
+
+## individual samples
+### this downloads the data directy to the folder, 'data_dir'. Try not to actually run this loop
+haploqa_html <- read_html(sample_url)
+# extract information from html file
+html_temp <- haploqa_html %>% html_nodes("a") %>% html_attr("href")
+url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
+
+# list of urls to generate samples from
+url_ind <- unique(summary_df$`Sample Filepath`)
+
+# individual samples
+inc = 0
+for (url in url_ind) {
+  inc = inc + 1 # increment
+  file <- sample_individual_scrape(url, url_domain)
+  print(paste0('Working on file ', inc, '/', length(url_ind), ': ', file))
+  sample_df_save <- as.data.frame(content(GET(file)))
+  print('Writing to directory')
+  file_name <- unlist(strsplit(file, '/'))[6]
+  GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
+}
+
+### note: get_qtl2_input reads all files from data_dir recursively and binds them into one big file. The big file is then merged with summary file to gather some necessary metadatas. This merged file is the main input file 
+
+
+```
+
+The main input file, which contains (insert detailed info here later), is then processed into the required input format for qtl2.
+The qtl2 input file contains the following parts: genotype, genetic map, ... (do we need to explain thw input file structures to the audience or would they be familiar with this already?)
+
+Encoding(?) - in the main file, the retrieved data can be separated into two parts:
+    1. variables 'haplotype1', 'haplotype2', which represents the haploqa results,
+    2. variables 'allele1', 'allele2', which is the (original?) alleles used to calculate the haploqa results. These alleles will also be used for the qtl2 computations.
+
+Function 'get_qtl2_input' contains all the necessary algorithms to convert the data into separate required files. The output is then read in by qtl2 and used for calculations for different metrics.
+
+  1. qtl2 result calculations (genoprob(pr), phased geno(ph_geno), etc)
+  2. haploqa result calculations, with the same metrics as above.
+
+
+#### 2.3. Demo (?)
+
+##### 2.3.1. GigaMUGA
+The pipeline for GigaMUGA executes all the individuals within the sample. The contributing founders for all individuals within the GigaMUGA samples are always the same.
+
+```{r}
+# simulated phenotypes
+list_pheno <- c('WBC', 'NEUT')
+```
+
+
+Results for DO:
+```{r}
+# DO
+do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
+
+```
+
+Below are the genotype visualizations for some individuals: 
+(pick some representative ones?)
+```{r}
+plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_results[['map']], ind = 1, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+
+```{r}
+plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_results[['map']], ind = 50, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+Results for CC:
+```{r}
+# DO
+cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
+
+```
+
+genotype visualizations for some individuals: 
+```{r}
+plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_results[['map']], ind = 1, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+
+```{r}
+plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_results[['map']], ind = 50, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+
+(do this for other models as well)
+
+##### 2.3.2. MiniMUGA
+MiniMUGA has a separate pipeline that runs for one individual at a time due to each individuals having different (contributing?) founders.
+
+```{r}
+sample1_results <- sample_haplotype_reconstruction('MiniMUGA', 'DJN', samples_gen = T, qtl2_file_gen = T)
+plot_onegeno_test(sample1_results[['ph_geno']], sample1_results[['ph_geno_haploqa']], sample1_results[['map']], ind = 1, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+
+```{r}
+sample2_results <- sample_haplotype_reconstruction('MiniMUGA', 'JXN', samples_gen = T, qtl2_file_gen = T)
+plot_onegeno_test(sample2_results[['ph_geno']], sample2_results[['ph_geno_haploqa']], sample2_results[['map']], ind = 1, 
+                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
+                          sub = 'Left - qtl2, Right - HaploQA') 
+```
+
+
+##### 2.3.3. Shiny Visualizations
+
+```{r}
+source(paste0(root,"/app.R"))
+shinyApp(ui, server)
+```
+
+
+#### 3.Statistical Results
+
+
+There are three parts of the comparison:
+1. haploqa results, which can be obtained directly from haploqa.jax.org by downloading the SNP level haplotype reports from each sample. 
+2. qtl2 genAIL results, which was calculated using the R package 'qtl2' with the crosstypes 'genail'
+3. qtl2 best model, which was calculated using the qtl2package with the original crosstype 
+
+The visualization shows a high-level idea of the difference between the haplotype reconstruction results between qtl2 and haploqa. To compare the detailed results for the methods, ...
+
+(where to put truth model)
+
+#### 4. Conclusion - TBD
