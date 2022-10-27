@@ -3,22 +3,24 @@ Input data received from HaploQA - https://haploqa.jax.org/, software platform t
 
 Computation implementations based on R/qtl2 - Broman KW, Gatti DM, Simecek P, Furlotte NA, Prins P, Sen Ś, Yandell BS, Churchill GA (2018) R/qtl2: software for mapping quantitative trait loci with high-dimensional data and multi-parent populations. Genetics 211:495-502
 
-# Disclaimer
-This pipeline is still in draft/dev state as of EOD 7/18/2022, especially the test_script branch...
+The purpose of this project is to determine the accuracy of outputs from HaploQA and qtl2 generalized AIL (Advanced intercross lines) methods compared to that of the optimal qtl2 models (referred in pipeline as truth models), and decide which method is the best for performing haplotype reconstruction tasks
 
 # Overview
+input_data_prep_functions.R - Main script containing all pipelines and utility functions
+HaploQA_qtl2_output.R - Script used to test the functions
+app.R - Shiny app functions for genotype visualizations
 
-HaploQA_qtl2_output.R - Launch script
-web_scrape_functions.R - script with functions
-
-haploqa_collab_cross - input data of individuals, output of 'sample_individual_scrape' function
-cc_qtl2_test - input data of qtl2, output of 'get_qtl2_input' function
+draft_report.Rmd - Markdown report of the project (work in progress)
 
 annotations_config.csv, founder_strains_table.csv - dictionaries used for mapping
 
 # Usage
-The complete pipeline from HaploQA data retrieval to qtl2 computations is in HaploQA_qtl2_output.R, change the toggles on top of the script to select whether to regenerate files and run the entire script.
+Overview of the programmatic outlines:
+1. Data retrieval (selected samples from https://haploqa.jax.org/) and wrangling
+2. Three major pipelines:
+  a. 'haplotype_reconstruction_pipeline' - haplotype reconstructions for an entire cross (all individuals within the cross)
+  b. 'sample_haplotype_reconstruction' - haplotype reconstructions for one individual
+  c. 'truth_model_reconstruction' - haplotype reconstructions for optimal/truth models
+3. metrics calculations - compare outputs from 'a' or 'b' above to that of 'c'
 
-# To-do:
-1. Make a script directory
-2. Make a results directory
+
