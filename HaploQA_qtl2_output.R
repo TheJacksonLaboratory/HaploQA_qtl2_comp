@@ -24,20 +24,27 @@ library(readr)
 root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
 
+# results directory
+results_dir <- file.path(root, 'results')
+dir.create(results_dir, showWarnings = FALSE) 
+
 # simulated geno
 list_pheno <- c('WBC', 'NEUT')
 
 ### GigaMUGA pipelines
-do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
-cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
-bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
-f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
+do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
+cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
+bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
+f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ## GigaMUGA truth models
-do_truth_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = T)
-cc_truth_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = T, samples_gen = F, truth_model = T)
-bxd_truth_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = T, samples_gen = F, truth_model = T)
-f2_truth_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = T, samples_gen = F, truth_model = T)
+do_truth_results <- truth_model_reconstruction('DO', list_pheno, qtl2_file_gen = T, samples_gen = F)
+cc_truth_results <- truth_model_reconstruction('CC', list_pheno, qtl2_file_gen = T, samples_gen = F)
+bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = T, samples_gen = F)
+f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen = T, samples_gen = F)
+
+
+qtl2::plot_onegeno(cc_truth_results[['ph_geno']], cc_truth_results[['map']], ind = 2, shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 2), sub = 'Left - qtl2, Right - HaploQA') 
 
 
 ### MiniMUGA pipeline
@@ -83,6 +90,7 @@ bxd_comp_csv <- geno_all_comp('BXD', bxd_results, bxd_truth_results)
 write.csv(bxd_comp_csv, file.path(shiny_pct_fp, 'bxd_truth_comp.csv'), row.names = F)
 ## F2
 f2_comp_csv <- geno_all_comp('F2', f2_results, f2_truth_results) 
+write.csv(f2_comp_csv, file.path(shiny_pct_fp, 'f2_truth_comp.csv'), row.names = F)
 
 
 
@@ -160,6 +168,8 @@ chr_pct_do <- get_geno_pct_diff(do_results[['ginf']], do_results[['ginf_haploqa'
 chr_pct_cc <- get_geno_pct_diff(cc_results[['ginf']], cc_results[['ginf_haploqa']], cc_results[['summary']], num_chr, founder_all_rev_lookup)
 
 
-
+### markers where either founder is no call
+### markers that have the same alleles
+## compare the founder geno columns each with the columns in geno 
 
   
