@@ -6,16 +6,14 @@ date: '2022-10-18'
 
 
 ### 1. Introduction
-two different methods of haplotype reconstruction (haploqa vs qtl2)
-  haploqa was written a decade ago, not well-maintained
-  qtl2 is newer method. Since haploqa is not maintained, it's ideal to discontinue. However, before the transition is made, this project is in place
-  to compare the results to ensure the qtl2 outputs can be used as a substitute for the haplotype reconstruction tasks that haploqa is doing.
   
 HaploQA is a web application developed in 2015 by the Jackson Laboratory for the purpose of storing, increasing accessibility and quality assurance of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. 
 
 R/qtl2 is an open-source software package built in 2019, which performs similar haplotype reconstruction tasks as mentioned in HaploQA - the software takes genotyping data as input, calculate the haplotype probabilities, then perform haplotype reconstructions based on the quantitative results. (HMM)
 
 Since R/qtl2 was built more recently and is currently maintained by the developers, the Jackson Laboratory is considering transitioning from HaploQA to R/qtl2 for similar haplotype reconstructing tasks with genotyping data. This project contains pipelines that retrieve genotyping data used in the initial HaploQA algorithm, performs haplotype reconstructions with said data using R/qtl2, and compare the R/qtl2 results to the initial results generated in HaploQA to determine whether R/qtl2 would be an appropriate replacement method for the HaploQA web application.
+
+(some backgrounds about when the optimal models were built/what about them makes them optimal?) Some optimal models were built for each of the crosses in qtl2, which 
   
 (Explain metrics used to assess model - percentage of markers that agree with the optimal model)  
   
@@ -251,9 +249,48 @@ do_pct_df
 # CC
 cc_pct_df <- fread(file.path(shiny_pct_fp, 'cc_truth_comp.csv'))
 cc_pct_df
+#cc_pct_df
+ggplot(cc_pct_df) + aes(x = qtl2_pct_diff, y = haploqa_pct_diff) + geom_point()
+```
+
+
+```{r}
+# BXD f3
+bxd_pct_df <- fread(file.path(shiny_pct_fp, 'bxd_truth_comp.csv'))
+bxd_pct_df
 
 ```
 
+
+```{r}
+# BXD f3
+f2_pct_df <- fread(file.path(shiny_pct_fp, 'f2_truth_comp.csv'))
+f2_pct_df
+
+```
+
+```{r}
+do_qtl2_truth_diff <- do_pct_df$qtl2_pct_diff
+cc_qtl2_truth_diff <- cc_pct_df$qtl2_pct_diff
+bxd_qtl2_truth_diff <- bxd_pct_df$qtl2_pct_diff
+f2_qtl2_truth_diff <- f2_pct_df$qtl2_pct_diff
+
+# align lengths
+max_n <- max(nrow(do_pct_df), nrow(cc_pct_df), nrow(bxd_pct_df), nrow(f2_pct_df))
+
+length(do_qtl2_truth_diff) <- max_n 
+length(cc_qtl2_truth_diff) <- max_n
+length(bxd_qtl2_truth_diff) <- max_n
+length(f2_qtl2_truth_diff) <- max_n
+
+df_qtl2_truth_diff <- as.data.frame(cbind('do_qtl2_truth_diff' = do_qtl2_truth_diff, 'cc_qtl2_truth_diff' = cc_qtl2_truth_diff, 'bxd_qtl2_truth_diff' = bxd_qtl2_truth_diff, 'f2_qtl2_truth_diff' = f2_qtl2_truth_diff))
+df_qtl2_truth_diff
+```
+
+
+```{r}
+do_qtl2_truth_diff
+```
 
 
 Based on the existing results for qtl2 and haploqa, and truth model result comparisons, it can be observed that...

@@ -1713,13 +1713,13 @@ geno_align <- function(df, n_founders) {
 geno_all_comp <- function(sample_type, sample_results, truth_results) {
   num_chr <- c((1:19),"X")
   #sample <- '6UY'
-  #sample_type <- 'CC'
-  #sample_results <- cc_results
-  #truth_results <- cc_truth_results
-  #founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
-  #founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
+  #sample_type <- 'BXD'
+ # sample_results <- bxd_results
+  #truth_results <- bxd_truth_results
+  founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
+  founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
-  geno_codes <- colnames(cc_truth_results[['pr']]$X)
+  geno_codes <- colnames(truth_results[['pr']]$X)
   founder_all_rev_lookup <- setNames(geno_codes, seq(1, length(geno_codes)))
   
   config <- fread(paste0(root, '/annotations_config.csv'))
@@ -1764,7 +1764,7 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
   df_geno_all_chr <- list()
   
   for (chr in num_chr) {
-    #chr <- 'X'
+    #chr <- 1
     
     print(chr)
     ## raw geno
@@ -2221,6 +2221,7 @@ truth_model_reconstruction <- function(sample_type, list_pheno, qtl2_file_gen, s
   
   ## summary file
   summary_df_fp <- paste0(data_dir, '/', sample_type, '_summary.csv')
+  summary_df <- fread(summary_df_fp)
   
   ## list of samples to exclude, if any
   exclude_list <- unlist(strsplit(config_sample$exclude_samples, ", "))

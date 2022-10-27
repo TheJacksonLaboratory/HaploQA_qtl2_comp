@@ -1,5 +1,6 @@
 library(rstudioapi)
 library(shiny)
+library(data.table)
 
 
 root <- dirname(getSourceEditorContext()$path)
