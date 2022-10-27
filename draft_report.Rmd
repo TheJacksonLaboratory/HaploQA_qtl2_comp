@@ -11,27 +11,45 @@ two different methods of haplotype reconstruction (haploqa vs qtl2)
   qtl2 is newer method. Since haploqa is not maintained, it's ideal to discontinue. However, before the transition is made, this project is in place
   to compare the results to ensure the qtl2 outputs can be used as a substitute for the haplotype reconstruction tasks that haploqa is doing.
   
+HaploQA is a web application developed in 2015 by the Jackson Laboratory for the purpose of storing, increasing accessibility and quality assurance of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. 
+
+R/qtl2 is an open-source software package built in 2019, which performs similar haplotype reconstruction tasks as mentioned in HaploQA - the software takes genotyping data as input, calculate the haplotype probabilities, then perform haplotype reconstructions based on the quantitative results. (HMM)
+
+Since R/qtl2 was built more recently and is currently maintained by the developers, the Jackson Laboratory is considering transitioning from HaploQA to R/qtl2 for similar haplotype reconstructing tasks with genotyping data. This project contains pipelines that retrieve genotyping data used in the initial HaploQA algorithm, performs haplotype reconstructions with said data using R/qtl2, and compare the R/qtl2 results to the initial results generated in HaploQA to determine whether R/qtl2 would be an appropriate replacement method for the HaploQA web application.
+  
+(Explain metrics used to assess model - percentage of markers that agree with the optimal model)  
+  
+  
+### 2. Methods
+  
+The pipeline developed for this project is stored in the script, 'input_data_prep_functions.R', which is stored in the same working directory as this report and is sourced below:
   
 ```{r}
 source(paste0(root,"/input_data_prep_functions.R"))
 ```
 
-  
-### 2. Methods
+in order to decide whether to transition, haploqa and qtl2 each need to be compared to an optimal model.
+
+, this project will perform haplotype reconstruction tasks using genortping data obtained from different types of data sources, specifically, 5 sets of GigaMUGA samples (Collaborative Cross, Diversity Outbred, F3, F2, <another one TBD>), 70 (?) individuals within the MiniMUGA sample. Decision wa made to not do Muga/MegaMUGA due to the discontinued usage.
 
 #### 2.1. Environment Set-up
 
-The calculation is being done for 5 samples in GigaMUGA (Collaborative Cross, Diversity Outbred, F3, F2, <another one TBD>), and the MiniMUGA sample. A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all the relevant file paths associated with each cross. A preview of the configuration file is shown as below:
+A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all the relevant file paths associated with each cross. A preview of the configuration file is shown as below:
+
+(explain the config file, contains crosstype, marker annotations, path to directories, etc.)
 
 
 ```{r}
 root <- dirname(rstudioapi::getSourceEditorContext()$path)
 config <- fread(paste0(root, '/annotations_config.csv'))
-config
+print(config)
 ```
 
-Below is an example of the pipeline for CC:
+Below is an example of how the pipeline set-up looks like for CC:
+
 ```{r}
+# comment it!
+#
 sample_type <- 'CC'
 ### Environment
 config_sample <- config[config$array_type == sample_type]
@@ -52,15 +70,15 @@ data_dir <- file.path(root, config_sample$data_dir)
 The pipeline takes the according data_dir, or qtl2_dir values for each cross, concatenate the variable values with the working directory (which is the directory where the functions are stored in), and read in/output files from the directories. 
 
 
-Input data was retrieved from haploqa.jax.org, and converted into the required input format for qtl2. There are two parts of data wrangling tasks:
-1. scrapes the HTML elements of the haploqa website and downloads the SNP level reports automatically for each individual within each cross
-2. concatenate the individuals within each cross into a single genotype file, converts the genotype file into the required input file for qtl2
+Input data was retrieved from haploqa.jax.org, and converted into the qtl2 input format. The data wrangling consists of two parts:
+1. scrapes the HTML elements of the haploqa website and downloads the SNP level reports for each individual within each cross
+2. concatenate the individuals within each cross into a single genotype file, converts the genotype file into the required input files for qtl2
 
 For example, for cross 'Collaborative Cross', the URL to the sample is http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html 
 
 The 'sample_summary_scrape' function reads the html elements of the website, (?)
 
-```{r}
+```{r} 
 ## summary file
 haploqa_html <- read_html(sample_url)
 # extract information from html file
@@ -79,6 +97,7 @@ url_list <- paste0(url_domain, html_temp[grepl('/sample', html_temp)])
 url_ind <- unique(summary_df$`Sample Filepath`)
 
 # individual samples
+## 
 inc = 0
 for (url in url_ind) {
   inc = inc + 1 # increment
@@ -200,8 +219,51 @@ There are three parts of the comparison:
 2. qtl2 genAIL results, which was calculated using the R package 'qtl2' with the crosstypes 'genail'
 3. qtl2 best model, which was calculated using the qtl2package with the original crosstype 
 
-The visualization shows a high-level idea of the difference between the haplotype reconstruction results between qtl2 and haploqa. To compare the detailed results for the methods, ...
+##### 3.1. Truth models
 
-(where to put truth model)
+At a glance of the visualizations which present a high-level idea of the difference between the haplotype reconstruction results between qtl2 and haploqa, there are some visible differences between the two models - specifically, qtl2 appears to have more crossovers and come minor areas appear to have different founder results. To determine which model is more correct, some 'truth' models, which the algorithms have been used (for a long time?), were also constructed for each of the crosses.
+
+As mentioned in the configuration file, the truth model for CC uses crosstype 'risib8', the truth model for DO uses crosstype 'do', the truth model for BXD F3 uses crosstype 'ail', and the truth model for F2 uses crosstype 'f2'. The executions of pipelines for the truth models are as shown below:
+
+```{r}
+do_truth_results <- truth_model_reconstruction('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
+cc_truth_results <- truth_model_reconstruction('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
+bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
+f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
+```
+
+
+##### 3.2. Quantitative comparisons
+Combining the results of the truth model, the qtl2 haplot
+(Display the csvs, and perhaps the visualizations here too)
+
+```{r}
+# filepath to the csvs
+shiny_pct_fp <- file.path(results_dir, 'shiny_pct_csvs') 
+
+# DO
+do_pct_df <- fread(file.path(shiny_pct_fp, 'do_truth_comp.csv'))
+do_pct_df
+```
+
+
+```{r}
+# CC
+cc_pct_df <- fread(file.path(shiny_pct_fp, 'cc_truth_comp.csv'))
+cc_pct_df
+
+```
+
+
+
+Based on the existing results for qtl2 and haploqa, and truth model result comparisons, it can be observed that...
+
 
 #### 4. Conclusion - TBD
+
+#### 5. References
+1. http://haploqa-dev.jax.org/help.html
+
+2. Broman KW, Gatti DM, Simecek P, Furlotte NA, Prins P, Sen Ś, Yandell BS, Churchill GA. R/qtl2: Software for Mapping Quantitative Trait Loci with High-Dimensional Data and Multiparent Populations. Genetics. 2019 Feb;211(2):495-502. doi: 10.1534/genetics.118.301595. Epub 2018 Dec 27. PMID: 30591514; PMCID: PMC6366910.
+
+
