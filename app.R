@@ -2,9 +2,10 @@ library(rstudioapi)
 library(shiny)
 library(data.table)
 
-
 root <- dirname(getSourceEditorContext()$path)
-source(paste0(root,"/input_data_prep_functions.R"))
+
+source("input_data_prep_functions.R", local = T)
+#source(paste0(root,"/util.R"))
 
 ## results directory
 results_dir <- file.path(root, 'results')

@@ -6,16 +6,19 @@ date: '2022-10-18'
 
 
 ### 1. Introduction
-  
-HaploQA is a web application developed in 2015 by the Jackson Laboratory for the purpose of storing, increasing accessibility and quality assurance of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. 
 
-R/qtl2 is an open-source software package built in 2019, which performs similar haplotype reconstruction tasks as mentioned in HaploQA - the software takes genotyping data as input, calculate the haplotype probabilities, then perform haplotype reconstructions based on the quantitative results. (HMM)
+HaploQA is a web application developed by Kieth Sheppard for The Reinholdt's Lab in 2015 for the purpose of storing, increasing accessibility and quality controlling of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. The source codes of HaploQA was written in Python 3.
 
-Since R/qtl2 was built more recently and is currently maintained by the developers, the Jackson Laboratory is considering transitioning from HaploQA to R/qtl2 for similar haplotype reconstructing tasks with genotyping data. This project contains pipelines that retrieve genotyping data used in the initial HaploQA algorithm, performs haplotype reconstructions with said data using R/qtl2, and compare the R/qtl2 results to the initial results generated in HaploQA to determine whether R/qtl2 would be an appropriate replacement method for the HaploQA web application.
+R/qtl2 is an open-source software package built in 2019, which not only performs similar haplotype reconstruction tasks as HaploQA but also has the functionality to perform other computations such as genetic mapping - in the pipeline developed for this project,the software takes genotyping data as input, calculate the haplotype probabilities based on a Hidden Markov Model algorithm, then perform haplotype reconstructions based on the quantitative results. 
 
-(some backgrounds about when the optimal models were built/what about them makes them optimal?) Some optimal models were built for each of the crosses in qtl2, which 
-  
-(Explain metrics used to assess model - percentage of markers that agree with the optimal model)  
+Since R/qtl2 was built more recently and is currently maintained by the developers, the Jackson Laboratory is considering transitioning from HaploQA to R/qtl2 generalized AIL (Advanced intercross lines)  for similar haplotype reconstructing tasks with genotyping data. The main purpose of this project is to decide if the transition should be made determine based on whether HaploQA or R/qtl2 genail provides more accurate haplotype reconstruction results.
+
+The best way to determine which method provides more accurate results is to compare the results of the two methods each to the 'correct' results - in R/qtl2, there exists some cross-specific models which the Hidden Markov model was tailored to generate the most accurate results for a particular cross. These models will be referred to as the 'truth' models in this document. 
+
+In this project, we selected some GigaMUGA crosses, developed pipelines that retrieve genotyping data used in the initial HaploQA algorithm, performs haplotype reconstruction computations for both qtl2 genail and haploqa, and compare the percentages of markers within each method that agree with the optimal model of the according crosses to determine whether HaploQA or R/qtl2 gen-AIL would be the most appropriate for similar haplotype reconstruction tasks. 
+
+The analysis was also done for MiniMUGA, as it is the standard cross type JAX uses for mutant mice, however, there is no tailored truth model for MiniMUGA.
+
   
   
 ### 2. Methods
@@ -23,22 +26,45 @@ Since R/qtl2 was built more recently and is currently maintained by the develope
 The pipeline developed for this project is stored in the script, 'input_data_prep_functions.R', which is stored in the same working directory as this report and is sourced below:
   
 ```{r}
+
+library(rstudioapi)
+library(qtl2)
+library(dplyr)
+library(tidyverse)
+library(httr)
+library(rvest)
+library(data.table)
+library(qtl2convert)
+library(ggrepel)
+library(reshape2)
+library(stats)
+library(ggplot2)
+library(stringr)
+library(stringi)
+library(lsa)
+library(readr)
+
+root <- dirname(getSourceEditorContext()$path)
 source(paste0(root,"/input_data_prep_functions.R"))
+
+#source(paste0(root,"/haplotype_reconstruction_pipelines.R"))
+
+
 ```
 
-in order to decide whether to transition, haploqa and qtl2 each need to be compared to an optimal model.
-
-, this project will perform haplotype reconstruction tasks using genortping data obtained from different types of data sources, specifically, 5 sets of GigaMUGA samples (Collaborative Cross, Diversity Outbred, F3, F2, <another one TBD>), 70 (?) individuals within the MiniMUGA sample. Decision wa made to not do Muga/MegaMUGA due to the discontinued usage.
+As mentioned in the introduction, in order to decide whether to transition, the accuracy of haploqa and qtl2 each need to be compared to an optimal model. This project will perform haplotype reconstruction tasks using genortping data obtained from different types of data sources, specifically, 5 sets of GigaMUGA samples (Collaborative Cross, Diversity Outbred, F3, F2, <another one TBD>), 70 (?) individuals within the MiniMUGA sample. Decision was made to not include Muga/MegaMUGA data due to the discontinued usage of the array types.
 
 #### 2.1. Environment Set-up
 
-A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all the relevant file paths associated with each cross. A preview of the configuration file is shown as below:
+A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all the relevant file paths associated with each cross. The config file contains each individual crosstypes, their according marker annotation files, paths to the directory where the input data is stored and the directory where qtl2 input data is saved in, etc. 
 
-(explain the config file, contains crosstype, marker annotations, path to directories, etc.)
+The purpose of this configuration file is to avoid having to pass a large list of parameters into each pipeline function.
+
+A preview of the configuration file is shown as below:
 
 
 ```{r}
-root <- dirname(rstudioapi::getSourceEditorContext()$path)
+#root <- dirname(rstudioapi::getSourceEditorContext()$path)
 config <- fread(paste0(root, '/annotations_config.csv'))
 print(config)
 ```
@@ -76,7 +102,7 @@ For example, for cross 'Collaborative Cross', the URL to the sample is http://ha
 
 The 'sample_summary_scrape' function reads the html elements of the website, (?)
 
-```{r} 
+```{r, eval = FALSE} 
 ## summary file
 haploqa_html <- read_html(sample_url)
 # extract information from html file
@@ -114,6 +140,13 @@ for (url in url_ind) {
 
 The main input file, which contains (insert detailed info here later), is then processed into the required input format for qtl2.
 The qtl2 input file contains the following parts: genotype, genetic map, ... (do we need to explain thw input file structures to the audience or would they be familiar with this already?)
+
+There are three major pipelines:
+a. 'haplotype_reconstruction_pipeline' - haplotype reconstructions for an entire cross (all individuals within the cross) 
+b. 'sample_haplotype_reconstruction' - haplotype reconstructions for one individual 
+c. 'truth_model_reconstruction' - haplotype reconstructions for optimal/truth models
+
+whereas the cross, MiniMUGA, contains mutate mice where all individuals may have different contributing founder strains. Therefore, the MiniMUGA samples 
 
 Encoding(?) - in the main file, the retrieved data can be separated into two parts:
     1. variables 'haplotype1', 'haplotype2', which represents the haploqa results,
@@ -180,7 +213,6 @@ plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_r
 ```
 
 
-(do this for other models as well)
 
 ##### 2.3.2. MiniMUGA
 MiniMUGA has a separate pipeline that runs for one individual at a time due to each individuals having different (contributing?) founders.
@@ -235,6 +267,7 @@ f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen =
 Combining the results of the truth model, the qtl2 haplot
 (Display the csvs, and perhaps the visualizations here too)
 
+
 ```{r}
 # filepath to the csvs
 shiny_pct_fp <- file.path(results_dir, 'shiny_pct_csvs') 
@@ -250,7 +283,7 @@ do_pct_df
 cc_pct_df <- fread(file.path(shiny_pct_fp, 'cc_truth_comp.csv'))
 cc_pct_df
 #cc_pct_df
-ggplot(cc_pct_df) + aes(x = qtl2_pct_diff, y = haploqa_pct_diff) + geom_point()
+#ggplot(cc_pct_df) + aes(x = qtl2_pct_diff, y = haploqa_pct_diff) + geom_point()
 ```
 
 
@@ -283,20 +316,85 @@ length(cc_qtl2_truth_diff) <- max_n
 length(bxd_qtl2_truth_diff) <- max_n
 length(f2_qtl2_truth_diff) <- max_n
 
-df_qtl2_truth_diff <- as.data.frame(cbind('do_qtl2_truth_diff' = do_qtl2_truth_diff, 'cc_qtl2_truth_diff' = cc_qtl2_truth_diff, 'bxd_qtl2_truth_diff' = bxd_qtl2_truth_diff, 'f2_qtl2_truth_diff' = f2_qtl2_truth_diff))
-df_qtl2_truth_diff
+df_qtl2_truth_diff <- as.data.frame(cbind('do' = do_qtl2_truth_diff, 'cc' = cc_qtl2_truth_diff, 'f3' = bxd_qtl2_truth_diff, 'f2' = f2_qtl2_truth_diff))
+plot_df <- melt(df_qtl2_truth_diff)
+
+library(ggplot2)    
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('qtl2 - proportion concordance between optimal and implemented models')
+```
+
+According to the visualization, which shows the percentage of marker differences between qtl2 genail and the truth models - DO, F3 and F2 are all producing results that are almost exactly the same as the optimal model, with CC having some discrepancies. We believe the reason why CC performs so differently is that the optimal model for CC does not allow any heterozygosity, whereas the genail does, so the genail model showed some residual heterozygosity from the CC mice which the optimal model does not have the ability to show. 
+
+```{r}
+do_haploqa_truth_diff <- do_pct_df$haploqa_pct_diff
+cc_haploqa_truth_diff <- cc_pct_df$haploqa_pct_diff
+bxd_haploqa_truth_diff <- bxd_pct_df$haploqa_pct_diff
+f2_haploqa_truth_diff <- f2_pct_df$haploqa_pct_diff
+
+# align lengths
+max_n <- max(nrow(do_pct_df), nrow(cc_pct_df), nrow(bxd_pct_df), nrow(f2_pct_df))
+
+length(do_haploqa_truth_diff) <- max_n 
+length(cc_haploqa_truth_diff) <- max_n
+length(bxd_haploqa_truth_diff) <- max_n
+length(f2_haploqa_truth_diff) <- max_n
+
+df_haploqa_truth_diff <- as.data.frame(cbind('do' = do_haploqa_truth_diff, 'cc' = cc_haploqa_truth_diff, 'f3' = bxd_haploqa_truth_diff, 'f2' = f2_haploqa_truth_diff))
+plot_df <- melt(df_haploqa_truth_diff)
+
+library(ggplot2)    
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('haploqa - proportion concordance between optimal and implemented models')
+```
+
+
+According to the visualization, which shows the percentage of marker differences between haploqa and the truth models - the haploqa results for f2 and f3 still seem to be similar to the optimal model, but DO and CC seem to be relatively incorrect results.
+
+```{r}
+do_haploqa_truth_diff <- do_pct_df$haploqa_qtl2_pct_diff
+cc_haploqa_truth_diff <- cc_pct_df$haploqa_qtl2_pct_diff
+bxd_haploqa_truth_diff <- bxd_pct_df$haploqa_qtl2_pct_diff
+f2_haploqa_truth_diff <- f2_pct_df$haploqa_qtl2_pct_diff
+
+# align lengths
+max_n <- max(nrow(do_pct_df), nrow(cc_pct_df), nrow(bxd_pct_df), nrow(f2_pct_df))
+
+length(do_haploqa_truth_diff) <- max_n 
+length(cc_haploqa_truth_diff) <- max_n
+length(bxd_haploqa_truth_diff) <- max_n
+length(f2_haploqa_truth_diff) <- max_n
+
+df_haploqa_truth_diff <- as.data.frame(cbind('do' = do_haploqa_truth_diff, 'cc' = cc_haploqa_truth_diff, 'f3' = bxd_haploqa_truth_diff, 'f2' = f2_haploqa_truth_diff))
+plot_df <- melt(df_haploqa_truth_diff)
+
+library(ggplot2)    
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('proportion concordance between implemented models (haploqa vs qtl2)')
 ```
 
 
 ```{r}
-do_qtl2_truth_diff
+mean_df <- rbind(t((colMeans(do_pct_df[,2:4]))), t((colMeans(cc_pct_df[,2:4]))), t((colMeans(bxd_pct_df[,2:4]))), t((colMeans(f2_pct_df[,2:4])))) %>% as.data.frame()
+colnames(mean_df) <- paste(colnames(mean_df), "mean", sep = "_")
+
+mean_df$sample_type <- c('DO', 'CC', 'F3', 'F2')
+mean_df %>% select(sample_type, everything())
+colMeans(cc_pct_df[,2:4])
 ```
 
+MiniMUGA
 
-Based on the existing results for qtl2 and haploqa, and truth model result comparisons, it can be observed that...
+```{r}
+mini_plot <- mini_pct_res %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(haplo_diplotype != qtl2_calls)/n()) %>% as.data.frame()
+plot_df <- melt(mini_plot)
+plot_df$variable <- 'MiniMUGA'
+   
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('MiniMUGA - percentage of marker difference between genail and haploqa') + xlab('model')
 
+```
+
+The MiniMUGA samples are mutant mice samples, meaning they often have founders that contribute to only a few markers. The above boxplot shows a relatively significant high number of markers that are different between haploQA and qtl2 genail, which shows a weakness for qtl2: due to the way HMM models determines genome states based on probabilities - when they are extra founders, or founders that only contribute to a few markers, qtl2 genail tends to be 'confused' and bounce states in the haplotype reconstruction process, whereas haploQA is capable of staying in states.
 
 #### 4. Conclusion - TBD
+Overall, the existing results for qtl2 genail and haploqa show that the two methods have very similar performance for most of the crosses, with genail performing significantly better for the DO outbred mice samples. HaploQA handles the extra founders being present in the haplotype reconstruction process better, however, qtl2 genail model has stronger capabilities to produce more accurate results for complicated crosses. So based on the results we have so far, we’re leaning toward that genail is more accurate than haploqa.
 
 #### 5. References
 1. http://haploqa-dev.jax.org/help.html
