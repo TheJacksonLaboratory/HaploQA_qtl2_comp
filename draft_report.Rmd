@@ -227,9 +227,13 @@ ind_gm <- ind_gm[!ind_gm %in% c('WY')] # FVB/NJ
 ind_gm <- ind_gm[!ind_gm %in% c('X2', 'X3', 'X4', 'X5', 'XA', 'XB', 'XC', 'XD', 'XJ', 'XK', 'XM', 'XN', 'XT', 'XU', 'XV', 'XW', 'Y2', 'Y3', 'Y4', 'Y5', 'YB', 'YC', 'YD', 'YE', 'YK', 'YM', 'YN', 'YP', 'YU', 'YV', 'YW', 'YX', 'Z5', 'Z6', 'Z7', 'ZC', 'ZD', 'ZE', 'ZF', 'ZM', 'ZN', 'ZP', 'ZQ', 'ZV', 'ZW', 'ZX', 'ZY', 'PY', 'Z3', 'ZB' ,'ZK', 'ZU')] # empty ones
 
 gigamuga_results <- list()
+gm_pct_res <- list()
 for (ind in ind_gm) {
   print(ind)
   sample_gm_res <- sample_haplotype_reconstruction('MURGIGV01', ind, samples_gen = T, qtl2_file_gen = T)
+  df <- minimuga_geno_comp(gigamuga_results[[ind]], ind, 'MURGIGV01')
+  
+  gm_pct_res[[ind]] <- df
   gigamuga_results[[ind]] <- sample_gm_res
 }
 ```
@@ -255,7 +259,6 @@ for (ind in ind_mini) {
   #ind <- 'JXN'
   print(ind)
   sample_mini_res <- sample_haplotype_reconstruction('MiniMUGA', ind, samples_gen = F, qtl2_file_gen = F)
-  
   df <- minimuga_geno_comp(sample_mini_res, ind, 'MiniMUGA')
   
   minimuga_results[[ind]] <- sample_mini_res
@@ -295,9 +298,8 @@ f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen =
 
 
 ##### 3.2. Quantitative comparisons
-Combining the results of the truth model, the qtl2 haplot
-(Display the csvs, and perhaps the visualizations here too)
 
+For visualizations, we constructed boxplots that demonstrate the percentage of marker that do not have the same results between qtl2, haploQA and the truth model:
 
 ```{r}
 # filepath to the csvs
@@ -305,33 +307,14 @@ shiny_pct_fp <- file.path(results_dir, 'shiny_pct_csvs')
 
 # DO
 do_pct_df <- fread(file.path(shiny_pct_fp, 'do_truth_comp.csv'))
-do_pct_df
-```
-
-
-```{r}
 # CC
 cc_pct_df <- fread(file.path(shiny_pct_fp, 'cc_truth_comp.csv'))
-cc_pct_df
-#cc_pct_df
-#ggplot(cc_pct_df) + aes(x = qtl2_pct_diff, y = haploqa_pct_diff) + geom_point()
-```
-
-
-```{r}
 # BXD f3
 bxd_pct_df <- fread(file.path(shiny_pct_fp, 'bxd_truth_comp.csv'))
-bxd_pct_df
-
-```
-
-
-```{r}
-# BXD f3
+# f2
 f2_pct_df <- fread(file.path(shiny_pct_fp, 'f2_truth_comp.csv'))
-f2_pct_df
-
 ```
+
 
 ```{r}
 do_qtl2_truth_diff <- do_pct_df$qtl2_pct_diff
@@ -411,7 +394,9 @@ mean_df %>% select(sample_type, everything())
 colMeans(cc_pct_df[,2:4])
 ```
 
-MiniMUGA
+The two mutant mice crosses, GigaMUGA Mutant and MiniMUGA, do not have a tailored optimal model. Therefore, plotting the percentage of marker discordance between qtl2 genail and haploQA.
+
+MiniMUGA:
 
 ```{r}
 mini_plot <- mini_pct_res %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(haplo_diplotype != qtl2_calls)/n()) %>% as.data.frame()
@@ -424,7 +409,19 @@ ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('MiniMUGA
 
 The MiniMUGA samples are mutant mice samples, meaning they often have founders that contribute to only a few markers. The above boxplot shows a relatively significant high number of markers that are different between haploQA and qtl2 genail, which shows a weakness for qtl2: due to the way HMM models determines genome states based on probabilities - when they are extra founders, or founders that only contribute to a few markers, qtl2 genail tends to be 'confused' and bounce states in the haplotype reconstruction process, whereas haploQA is capable of staying in states.
 
-#### 4. Conclusion - TBD
+GigaMUGA mutant:
+
+```{r}
+gm_pct_temp <- rbindlist(gm_pct_res)
+gm_plot <- gm_pct_temp %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = sum(haplo_diplotype != qtl2_calls)/n()) %>% as.data.frame()
+plot_df <- melt(gm_plot)
+plot_df$variable <- 'GigaMUGA Mutant'
+   
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('GigaMUGA Mutant - percentage of marker difference between genail and haploqa') + xlab('model')
+
+```
+
+#### 4. Conclusion
 Overall, the existing results for qtl2 genail and haploqa show that the two methods have very similar performance for most of the crosses, with genail performing significantly better for the DO outbred mice samples. HaploQA handles the extra founders being present in the haplotype reconstruction process better, however, qtl2 genail model has stronger capabilities to produce more accurate results for complicated crosses. So based on the results we have so far, we’re leaning toward that genail is more accurate than haploqa.
 
 #### 5. References
