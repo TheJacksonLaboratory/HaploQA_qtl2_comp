@@ -9,7 +9,7 @@ library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
 
 
-source(paste0(root,"/utils.R"))
+source(paste0(root,"/Scripts/utils.R"))
 
 # function to simulate the qtl2 maxmarg phasing computations
 # @param summary_df (data.frame) - summary table scraped from haploqa
@@ -101,7 +101,7 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
 #
 # @return cross_list (list containing multiple objects) - a list that has all the objects necessary for further research
 # such as genetic map, calculated qtl2 objects, phased genotypes for both qtl2 and haploqa, etc.
-save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model) {
+qtl2_metrics_comp <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model) {
   num_chr <- c((1:19),"X")
   print(sample_type)
   if (truth_model == T) {
@@ -190,6 +190,8 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_fo
   
   cross_list[['data_dir']] <- data_dir
   
+  cross_list[['founder_lookup']] <- founder_haplo_lookup
+  
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_all_rev_lookup <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
@@ -198,7 +200,7 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_fo
     ginf_haploqa_fp <- paste0(rds_dir, "/ginf_haploqa_", sample_type, ".rds")
     if (!file.exists(ginf_haploqa_fp)) {
       print('haploqa ginf file does not exist, running calculations from maxmarg simulation')
-      ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_rev_lookup, cross = cross_list[['cross']], qtl2_dir, sample_type, n_founders, founder_haplo_lookup)
+      ginf_haploqa <- maxmarg_sim(summary_df, data_dir, num_chr, founder_all_rev_lookup, cross = cross_list[['cross']], qtl2_dir, sample_type, n_founders, founder_haplo_lookup, pr)
       ## save to rds file
       cross_list[['ginf_haploqa']] <- ginf_haploqa
       saveRDS(ginf_haploqa, file = ginf_haploqa_fp)
@@ -225,3 +227,4 @@ save_rds <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_fo
   
   return(cross_list)
 }
+

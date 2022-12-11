@@ -3,8 +3,8 @@
 library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
 
-source(paste0(root,"/input_data_retrieval.R"))
-source(paste0(root,"/utils.R"))
+source(paste0(root,"/Scripts/input_data_retrieval.R"))
+source(paste0(root,"/Scripts/utils.R"))
 
 
 # function to generate genotype data for qtl2 input
