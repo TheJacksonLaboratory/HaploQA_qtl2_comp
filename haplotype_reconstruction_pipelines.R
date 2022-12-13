@@ -4,11 +4,11 @@ library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
 
 # environment set-up
-source(paste0(root,"/input_data_retrieval.R"))
-source(paste0(root,"/qtl2_input_data_prep.R"))
-source(paste0(root,"/qtl2_sim_comp.R"))
-source(paste0(root,"/get_comp_results.R"))
-source(paste0(root,"/utils.R"))
+source(paste0(root,"/Scripts/input_data_retrieval.R"))
+source(paste0(root,"/Scripts/qtl2_input_data_prep.R"))
+source(paste0(root,"/Scripts/qtl2_sim_comp.R"))
+source(paste0(root,"/Scripts/get_comp_results.R"))
+source(paste0(root,"/Scripts/utils.R"))
 
 
 # function to initiate the haplotype reconstruction pipeline

@@ -87,10 +87,6 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
   return(ginf_haploqa)
 }
 
-
-
-
-
 # function to store results into rds files for future use
 # @param rds_dir (string) - directory for which the rds files should be saved in
 # @param qtl2_dir (string) - directory to read the qtl2 input files from

@@ -254,15 +254,28 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
   } else { 
     print('founder sample data does not exist')
     inc = 0
+    st_error_urls <- list()
     for (url in url_list) {
       file <- sample_individual_scrape(url, url_domain) # call function from another script
       inc = inc+1 # track progress
       print(paste0('working on file ', inc, '/', iter_len, ' ', file))
-      df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
+      # screen time errors
+      skip <- FALSE
+      tryCatch(as.data.frame(content(GET(file), encoding="UTF-8")), error = function(e) { skip <<- TRUE})
+      if(!skip) { 
+        df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
+      } else {
+        print(paste0('skipped ', url, ' due to screentime error'))
+        st_error_urls <- c(st_error_urls, url)
+        next
+      } 
+      
       file_name <- unlist(strsplit(file, '/'))[6]
       print('Writing to directory')
       #founders_total <- rbind(founders_total,df_temp)
+      
       GET(file, write_disk(file.path(founders_sample_dir, file_name), overwrite = TRUE), show_col_types = FALSE)
+      
     }
     
     founder_data_files <- dir(founders_sample_dir, pattern = '\\.txt$', full.names = TRUE)
@@ -271,6 +284,7 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
     write.csv(founders_total, fp_founders, row.names = F)
   }
   
+  print(paste0('urls skipped: ', st_error_urls))
   
   return(founders_total)
   
@@ -302,7 +316,7 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
   # all txt file from directory
   data_files <- dir(data_dir, pattern = '\\.txt$', full.names = TRUE)
   ### combine all files
-  df_raw <- rbindlist(lapply(data_files, read_sample_txt)) %>% filter(!sample_id %in% exclude_list) # save Y chrom here for gender plotting
+  df_raw <- rbindlist(lapply(data_files, read_sample_txt)) #%>% filter(!sample_id %in% exclude_list) # save Y chrom here for gender plotting
   
   ## exclude the ones with bad string names
   if(sample_type == 'CC') {
@@ -384,7 +398,7 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
   
   # get founder data for gigamuga
   if (sample_type %in% c('CC', 'DO', 'BXD', 'F2', 'MURGIGV01')) {
-    founders_total <- get_founder_data(founder_url, url_list, sample_type, data_dir, founder_filename)
+    founders_total <- get_founder_data(founder_url, url_list, sample_type, data_dir, paste0(marker_type, '_founders.csv'))
     #write.csv(founders_total, fp_founders, row.names = F)
     
     df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup, sample_type)
