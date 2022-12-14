@@ -58,7 +58,7 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
   ## save per chromosome
   ginf_haploqa <- list()
   for (i in num_chr) {
-     i <- '1'
+     #i <- '1'
     
     # founder table
     geno_codes <- colnames(pr[[i]])

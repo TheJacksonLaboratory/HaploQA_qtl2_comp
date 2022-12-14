@@ -139,17 +139,28 @@ haplotype_reconstruction_pipeline <- function(sample_type, list_pheno, qtl2_file
     
     # individual samples
     inc = 0
+    st_error_urls <- list()
     for (url in url_ind) {
       inc = inc + 1 # increment
-      file <- sample_individual_scrape(url, url_domain)
+      # screen time errors
+      skip <- FALSE
       print(paste0('Working on file ', inc, '/', length(url_ind), ': ', file))
-      sample_df_save <- as.data.frame(content(GET(file)))
+      file <- sample_individual_scrape(url, url_domain)
+      tryCatch(as.data.frame(content(GET(file), encoding="UTF-8")), error = function(e) {skip <<- TRUE})
+      if(!skip) { 
+        sample_df_save <- as.data.frame(content(GET(file)))
+      } else {
+        print(paste0('skipped ', url, ' due to screentime error'))
+        st_error_urls <- c(st_error_urls, url)
+        next
+      } 
       print('Writing to directory')
       file_name <- unlist(strsplit(file, '/'))[6]
       GET(file, write_disk(paste0(data_dir, '/', file_name), overwrite = TRUE), show_col_types = FALSE)
       
       
     }
+    print(paste0('urls skipped: ', st_error_urls))
   }
   
   ### Part 2 - convert results to qtl2 input format

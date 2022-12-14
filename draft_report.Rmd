@@ -7,7 +7,7 @@ date: '2022-10-18'
 
 ### 1. Introduction
 
-HaploQA is a web application developed by Kieth Sheppard for The Reinholdt's Lab in 2015 for the purpose of storing, increasing accessibility and quality controlling of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. The source codes of HaploQA was written in Python 3.
+HaploQA is a web application developed by Kieth Sheppard for The Reinholdt's Lab in 2015 for the purpose of storing, increasing accessibility and quality controlling of micro array mice genotyping data. According to the HaploQA about website, 'On the import of a sample, the haplotype probabilities that are represented in the plots are calculated.' and the haplotype reconstruction process for the contributing founder strains is then done based on the calculated probabilities. The source codes of HaploQA was written in Python 3 and JavaScript.
 
 R/qtl2 is an open-source software package built in 2019, which not only performs similar haplotype reconstruction tasks as HaploQA but also has the functionality to perform other computations such as genetic mapping - in the pipeline developed for this project,the software takes genotyping data as input, calculate the haplotype probabilities based on a Hidden Markov Model algorithm, then perform haplotype reconstructions based on the quantitative results. 
 
@@ -100,7 +100,7 @@ a. 'haplotype_reconstruction_pipeline' - haplotype reconstructions for an entire
 b. 'sample_haplotype_reconstruction' - haplotype reconstructions for one individual 
 c. 'truth_model_reconstruction' - haplotype reconstructions for optimal/truth models
 
-Some crosses, such as DO and CC, have the same contributing founders across all individuals. The haplotype reconstructions can therefore be conducted for all individuals in the entire cross at the same time. The pipeline 'haplotype_reconstruction_pipeline' can be used for crosses with consistent contributing founders for such purpose. Whereas the mutant crosses, such as MiniMUGA, contains individuals with mutate mice where all individuals may have different contributing founder strains. Haplotype reconstructions for these types of crosses need to conducted individually for each sample, and therefore, the pipeline 'sample_haplotype_reconstruction' should be used.
+Some crosses, such as DO and CC, have the same contributing founders across all individuals. The haplotype reconstructions can therefore be conducted for all individuals in the entire cross at the same time, and the pipeline 'haplotype_reconstruction_pipeline' can be used for crosses with consistent contributing founders for such purpose. Whereas the mutant crosses, such as MiniMUGA, contains individuals with mutate mice where all individuals may have different contributing founder strains. Haplotype reconstructions for these types of crosses need to conducted individually for each sample, and therefore, the pipeline 'sample_haplotype_reconstruction' should be used.
 
 The below results section will demonstrate how the pipelines are used for each cross and the results generated from them.
 
@@ -112,7 +112,7 @@ The pipeline for GigaMUGA executes all the individuals within the sample. The co
 
 1. Results for DO:
 
-```{r}
+```{r message=FALSE}
 do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ```
@@ -135,7 +135,7 @@ plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_r
 2. Results for CC:
 
 ```{r}
-cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F, truth_model = F)
+cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ```
 

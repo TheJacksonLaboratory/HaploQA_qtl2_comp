@@ -240,6 +240,7 @@ qtl2_ci <- function(summary_df, ngen, founder_haplo_lookup) {
 # @return founders_total (data.frame) - combined dataframe with all founder individual files
 # columns of founders_total: sample_id, original_sample_id, snp_id, chromosome, position_bp, allele1_fwd, allele2_fwd, haplotype1, haplotype2
 get_founder_data <- function(founder_url, url_list, sample_type, data_dir, founder_filename) {
+  
   # get length to keep track of progress
   iter_len <- length(url_list)
   # loop through urls to extract individual files
@@ -261,7 +262,7 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
       print(paste0('working on file ', inc, '/', iter_len, ' ', file))
       # screen time errors
       skip <- FALSE
-      tryCatch(as.data.frame(content(GET(file), encoding="UTF-8")), error = function(e) { skip <<- TRUE})
+      tryCatch(as.data.frame(content(GET(file), encoding="UTF-8")), error = function(e) {skip <<- TRUE})
       if(!skip) { 
         df_temp <- as.data.frame(content(GET(file), encoding="UTF-8"))
       } else {
@@ -284,7 +285,10 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
     write.csv(founders_total, fp_founders, row.names = F)
   }
   
-  print(paste0('urls skipped: ', st_error_urls))
+  ## comments, make it into a log file
+  sum_temp <- sample_summary_scrape(read_html(founder_url), url_list, marker_type)
+  skipped_ids <- sum_temp[sum_temp$`Sample Filepath` %in% st_error_urls,]$ID
+  print(paste0('urls skipped: ', skipped_ids))
   
   return(founders_total)
   
