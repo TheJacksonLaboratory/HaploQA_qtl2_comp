@@ -47,6 +47,7 @@ root <- dirname(getSourceEditorContext()$path)
 #source(paste0(root,"/input_data_prep_functions.R"))
 
 source(paste0(root,"/haplotype_reconstruction_pipelines.R"))
+results_dir <- file.path(root, 'results')
 
 # simulated phenotypes
 list_pheno <- c('WBC', 'NEUT')
@@ -134,7 +135,7 @@ plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_r
 
 2. Results for CC:
 
-```{r}
+```{r message=FALSE}
 cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ```
@@ -157,7 +158,7 @@ plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_r
 3. Results for BXD F3:
 
 ```{r}
-bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
+bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = T, samples_gen = T)
 
 ```
 
@@ -179,7 +180,7 @@ plot_onegeno_test(bxd_results[['ph_geno']], bxd_results[['ph_geno_haploqa']], bx
 4. Results for F2:
 
 ```{r}
-f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
+f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = T, samples_gen = F)
 ```
 
 Genotype visualizations for some individuals: 
@@ -200,7 +201,6 @@ plot_onegeno_test(f2_results[['ph_geno']], f2_results[['ph_geno_haploqa']], f2_r
 5. GigaMUGA Mutant cross
 
 ```{r}
-
 ### GigaMUGA mutant
 gigamuga_url <- 'http://haploqa-dev.jax.org/tag/Jackson_Lab_Mahaffey_MURGIGV01_20160102_FinalReport.html'
 url_domain <- 'http://haploqa-dev.jax.org/'
@@ -254,7 +254,7 @@ mini_pct_res <- list()
 for (ind in ind_mini) {
   #ind <- 'JXN'
   print(ind)
-  sample_mini_res <- sample_haplotype_reconstruction('MiniMUGA', ind, samples_gen = F, qtl2_file_gen = F)
+  sample_mini_res <- sample_haplotype_reconstruction('MiniMUGA', ind, samples_gen = T, qtl2_file_gen = T)
   df <- ind_geno_comp(sample_mini_res, ind, 'MiniMUGA')
   
   minimuga_results[[ind]] <- sample_mini_res
@@ -331,10 +331,16 @@ df_qtl2_truth_diff <- as.data.frame(cbind('do' = do_qtl2_truth_diff, 'cc' = cc_q
 plot_df <- melt(df_qtl2_truth_diff)
 
 library(ggplot2)    
-ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('qtl2 - proportion concordance between optimal and implemented models')
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('qtl2 - proportion discordance between optimal and implemented models')
 ```
 
-According to the visualization, which shows the percentage of marker differences between qtl2 genail and the truth models - DO, F3 and F2 are all producing results that are almost exactly the same as the optimal model, with CC having some discrepancies. We believe the reason why CC performs so differently is that the optimal model for CC does not allow any heterozygosity, whereas the genail does, so the genail model showed some residual heterozygosity from the CC mice which the optimal model does not have the ability to show. 
+According to the visualization, which shows the percentage of marker discordance between qtl2 genail and the truth models - DO, F3 and F2 are all producing results that are almost exactly the same as the optimal model, with CC having some discrepancies. We believe the reason why CC performs so differently is that the optimal model for CC does not allow any heterozygosity, whereas the genail does, so the genail model showed some residual heterozygosity from the CC mice which the optimal model does not have the ability to show. 
+
+The outliers at 80% discordance are samples V6 and VP. Their haplotype reconstruction results appear to be highly heterozygous as CC mice, which explains the high discordance rate. However, it is believed that these two mice samples may have been mistakenly labeled as CC, as the genomes of CC mice are generally homozygous. Further investigation may be needed on the two samples.
+
+Below are the karyotype plots for the two samples:
+
+![Karyotype plot - sample VP in CC](/Users/linc/Desktop/VP_geno_cc.png) ![Karyotype plot - sample V6 in CC](/Users/linc/Desktop/V6_geno_cc.png)
 
 ```{r}
 do_haploqa_truth_diff <- do_pct_df$haploqa_pct_diff
@@ -354,9 +360,8 @@ df_haploqa_truth_diff <- as.data.frame(cbind('do' = do_haploqa_truth_diff, 'cc' 
 plot_df <- melt(df_haploqa_truth_diff)
 
 library(ggplot2)    
-ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('haploqa - proportion concordance between optimal and implemented models')
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('haploqa - proportion discordance between optimal and implemented models')
 ```
-
 
 According to the visualization, which shows the percentage of marker differences between haploqa and the truth models - the haploqa results for f2 and f3 still seem to be similar to the optimal model, but DO and CC seem to be relatively incorrect results.
 
@@ -378,7 +383,7 @@ df_haploqa_truth_diff <- as.data.frame(cbind('do' = do_haploqa_truth_diff, 'cc' 
 plot_df <- melt(df_haploqa_truth_diff)
 
 library(ggplot2)    
-ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('proportion concordance between implemented models (haploqa vs qtl2)')
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('haploqa vs qtl2 - proportion discordance between implemented models')
 ```
 
 
@@ -404,7 +409,6 @@ ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('MiniMUGA
 
 ```
 
-(add screenshots of karyotype plots for outliers)
 
 The MiniMUGA samples are mutant mice samples, meaning they often have founders that contribute to only a few markers. The above boxplot shows a relatively significant high number of markers that are different between haploQA and qtl2 genail, which shows a weakness for qtl2: due to the way HMM models determines genome states based on probabilities - when they are extra founders, or founders that only contribute to a few markers, qtl2 genail tends to be 'confused' and bounce states in the haplotype reconstruction process, whereas haploQA is capable of staying in states.
 
@@ -423,10 +427,28 @@ ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('GigaMUGA
 #### 4. Conclusion
 Overall, the existing results for qtl2 genail and haploqa show that the two methods have very similar performance for most of the crosses, with genail performing significantly better for the DO outbred mice samples. HaploQA handles the extra founders being present in the haplotype reconstruction process better, however, qtl2 genail model has stronger capabilities to produce more accurate results for complicated crosses. So based on the results we have so far, we’re leaning toward that genail is more accurate than haploqa.
 
-(make a plot to visualize run time)
-(talk about the strengths and weaknesses)
-(figure out the error LOD)
-qtl2 does not scale well with large number of founders
+Aside from the statistical metrics comparison between the haplotype reconstruction results, it is also worth taking the programmatic strengths and weaknesses of the two models into consideration:
+
+HaploQA:
+  1. advantages: 
+      a. Not a programming tool - people without relevant knowledge can still use the tool and perform haplotype reconstruction
+      b. Works for all MUGA array-based genotyping data 
+      c. Detailed and concise visualizations on web interface
+  2. disadvantages:
+      a. haplotype reports are not easy to access computationally
+      b. source codes are also not easy to access computationally
+      c. expensive to maintain at the organization's costs
+      
+R/qtl2: 
+  1. advantages:
+      a. fully accessible computationally
+      b. capable of performing other genetic analysis
+      c. currently maintained by developers
+  2. disadvantages:
+      a. algorithms is probability based, tends to bounce states when low-contribution founders are present
+      b. does not scale well with large number of founders, run time increases exponentially 
+      c. visualizations are less detailed and need to be generated on demand
+  
 
 #### 5. References
 1. http://haploqa-dev.jax.org/help.html
@@ -434,11 +456,4 @@ qtl2 does not scale well with large number of founders
 2. Broman KW, Gatti DM, Simecek P, Furlotte NA, Prins P, Sen Ś, Yandell BS, Churchill GA. R/qtl2: Software for Mapping Quantitative Trait Loci with High-Dimensional Data and Multiparent Populations. Genetics. 2019 Feb;211(2):495-502. doi: 10.1534/genetics.118.301595. Epub 2018 Dec 27. PMID: 30591514; PMCID: PMC6366910.
 
 
-
-qtl2fst - store large objects 
-calc_genoprob_fst
-(allele prob fst)
-for DO - 
-time the regular genoprob and fst
-get the file size/memory usage of RDS and FST
 

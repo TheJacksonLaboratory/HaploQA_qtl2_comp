@@ -390,7 +390,7 @@ sample_haplotype_reconstruction <- function(sample_type, sample_name, samples_ge
     founder_sum <- founder_sum[founder_sum$`Haplotype Candidate` == 'True',] %>% rename(sample_id = ID, original_sample_id = 'Secondary IDs')
     fp_founders <- file.path(root, 'MiniMUGA_founder_samples.csv')
     
-    founders_total <- get_founder_data(sample_url, founder_sum$`Sample Filepath`, sample_type, data_dir, founder_filename)
+    founders_total <- get_founder_data(sample_url, founder_sum$`Sample Filepath`, sample_type, data_dir, 'MiniMUGA_founders.csv')
     
     founders_list <- names(founder_haplo_lookup)
     

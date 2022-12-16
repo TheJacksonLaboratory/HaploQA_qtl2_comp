@@ -279,17 +279,18 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
       
     }
     
+    ## comments, make it into a log file
+    sum_temp <- sample_summary_scrape(read_html(founder_url), url_list, marker_type)
+    skipped_ids <- sum_temp[sum_temp$`Sample Filepath` %in% st_error_urls,]$ID
+    print(paste0('urls skipped: ', skipped_ids))
+    
     founder_data_files <- dir(founders_sample_dir, pattern = '\\.txt$', full.names = TRUE)
     ### combine all files
     founders_total <- rbindlist(lapply(founder_data_files, read_sample_txt))
     write.csv(founders_total, fp_founders, row.names = F)
   }
   
-  ## comments, make it into a log file
-  sum_temp <- sample_summary_scrape(read_html(founder_url), url_list, marker_type)
-  skipped_ids <- sum_temp[sum_temp$`Sample Filepath` %in% st_error_urls,]$ID
-  print(paste0('urls skipped: ', skipped_ids))
-  
+
   return(founders_total)
   
 }
