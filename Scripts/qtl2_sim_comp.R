@@ -2,7 +2,7 @@
 # this is necessary because the computed haploqa results needs to be in the same format as qtl2 (with genoprob, phased geno, etc.)
 ### function directory
 ## 1. maxmarg_sim - simulate maxmarg phasing computations for haploqa
-## 2. save_rds - save all results into rds
+## 2. qtl2_metrics_comp - save all results into rds
 
 
 library(rstudioapi)

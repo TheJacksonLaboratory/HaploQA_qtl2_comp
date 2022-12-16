@@ -808,7 +808,7 @@ truth_model_reconstruction <- function(sample_type, list_pheno, qtl2_file_gen, s
   }
   
   ### get results for the sample
-  results <- save_rds(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model = T)
+  results <- qtl2_metrics_comp(rds_dir, qtl2_dir, sample_type, results_dir, data_dir, n_founders, founder_haplo_lookup, truth_model = T)
   
   return(results)
 }
