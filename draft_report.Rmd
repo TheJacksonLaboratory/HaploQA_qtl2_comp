@@ -1,7 +1,7 @@
 ---
-title: "Untitled"
+title: "HaploQA vs. R/qtl2 Haplotype Reconstructions"
 output: html_document
-date: '2022-10-18'
+date: '2022-12-16'
 ---
 
 
@@ -115,7 +115,6 @@ The pipeline for GigaMUGA executes all the individuals within the sample. The co
 
 ```{r message=FALSE}
 do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
-
 ```
 
 Below are the genotype visualizations for some individuals: 
@@ -131,6 +130,8 @@ plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_r
 plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_results[['map']], ind = 50, 
                           shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
                           sub = 'Left - qtl2, Right - HaploQA') 
+
+# remove DO from memory
 ```
 
 2. Results for CC:
@@ -434,27 +435,46 @@ Overall, the existing results for qtl2 genail and haploqa show that the two meth
 Aside from the statistical metrics comparison between the haplotype reconstruction results, it is also worth taking the programmatic strengths and weaknesses of the two models into consideration:
 
 HaploQA:
+
   1. advantages: 
+  
       a. Not a programming tool - people without relevant knowledge can still use the tool and perform haplotype reconstruction
+      
       b. Works for all MUGA array-based genotyping data 
+      
       c. Detailed and concise visualizations on web interface
+      
   2. disadvantages:
+  
       a. haplotype reports are not easy to access computationally
+      
       b. source codes are also not easy to access computationally
+      
       c. expensive to maintain at the organization's costs
       
 R/qtl2: 
+
   1. advantages:
+  
       a. fully accessible computationally
+      
       b. capable of performing other genetic analysis
+      
       c. currently maintained by developers
+      
   2. disadvantages:
+  
       a. algorithms is probability based, tends to bounce states when low-contribution founders are present
-      b. does not scale well with large number of founders, run time increases exponentially 
-      c. visualizations are less detailed and need to be generated on demand
+      
+      b. visualizations are less detailed and need to be generated on demand
+      
+      c. does not scale well with large number of founders, run time increases exponentially 
+      
+      ![Genoprob runtime plot](/Users/linc/Desktop/genoprob_runtime.png)
   
 
 #### 5. References
+
 1. http://haploqa-dev.jax.org/help.html
 
 2. Broman KW, Gatti DM, Simecek P, Furlotte NA, Prins P, Sen Ś, Yandell BS, Churchill GA. R/qtl2: Software for Mapping Quantitative Trait Loci with High-Dimensional Data and Multiparent Populations. Genetics. 2019 Feb;211(2):495-502. doi: 10.1534/genetics.118.301595. Epub 2018 Dec 27. PMID: 30591514; PMCID: PMC6366910.
