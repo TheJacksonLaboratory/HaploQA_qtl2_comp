@@ -20,8 +20,18 @@ In this project, we selected some GigaMUGA crosses, developed pipelines that ret
 
 ### 2. Methods
 
+#### 2.1. Environment set-up
+
 The main repository is https://github.com/TheJacksonLaboratory/HaploQA_qtl2_comp which contains the main pipelines developed for this project, all utility functions, and visualizations of selected results.
-  
+
+There is no need to pre-download anything from any other websites or manually create any directories, as those processes were automated by the pipelines. However, the automation depend heavily on the CSV files stored in the directory, and without proper set-ups of the CSV files, the pipeline will not run. Please make sure the following CSVs are present in the directory after cloning the repo:
+
+1. annotations_config.csv - configuration file containing all technical set-ups for the pipeline, details will be explained in the next section.
+
+2. founder_lookup_table.csv - lookup table containing all possible geno codes (AA, BB, AB, AY, BY, etc.) and their according number codes (1, 2, 3, 4, etc.)
+
+3. founder_strains_table.csv - lookup table containing the standard 8 founder strains (A/J, C57BL/6J, etc.) and their according letter codes (A, B, etc.) This is primarily used for CC and DO to ensure the 8 founders are encoded in the correct order.
+
 The pipelines developed for this project is stored in the script, 'haplotype_reconstruction_pipelines.R', which is stored in the same working directory as this report and is sourced below:
   
 ```{r}
@@ -54,17 +64,17 @@ shiny_pct_fp <- file.path(results_dir, 'shiny_pct_csvs')
 list_pheno <- c('WBC', 'NEUT')
 ```
 
-As mentioned in the introduction, in order to decide whether to transition, the accuracy of haploqa and qtl2 each need to be compared to an optimal model. The pipelines in the sources script perform haplotype reconstruction tasks using genotyping data obtained from different types of data sources, specifically, 5 sets of GigaMUGA samples (Collaborative Cross, Diversity Outbred, F3, F2, and a GigaMUGA mutant cross), 70 individuals within the MiniMUGA sample. Decision was made to not include Muga/MegaMUGA data due to the discontinued usage of the array types.
+There are three major pipelines in the repository:
 
-#### 2.2. Data Retrieval 
+a. 'haplotype_reconstruction_pipeline' - haplotype reconstructions for an entire cross (all individuals within the cross) 
 
-Input data was retrieved from haploqa.jax.org, and converted into the qtl2 input format. The data wrangling consists of two parts:
-1. scrapes the HTML elements of the haploqa website and downloads the SNP level reports for each individual within each cross
-2. concatenate the individuals within each cross into a single genotype file, converts the genotype file into the required input files for qtl2
+b. 'sample_haplotype_reconstruction' - haplotype reconstructions for one individual 
 
-However, haploqa.jax.org contains a large number of uploaded samples and the input data for each cross needs to be retrieved from their according sample. For example, for cross 'Collaborative Cross', the URL to the sample is http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html 
+c. 'truth_model_reconstruction' - haplotype reconstructions for optimal/truth models
 
-A configuration file, 'annotations_config.csv', is stored in the environment, which allows the pipeline to automatically obtain all relevant information associated with each cross such as the sample URL, input data directory, output data directory, marker annotation file names, etc. 
+Some crosses, such as DO and CC, have the same contributing founders across all individuals. The haplotype reconstructions can therefore be conducted for all individuals in the entire cross at the same time, and the pipeline 'haplotype_reconstruction_pipeline' can be used for crosses with consistent contributing founders for such purpose. Whereas the mutant crosses, such as MiniMUGA, contains individuals with mutate mice where all individuals may have different contributing founder strains. Haplotype reconstructions for these types of crosses need to conducted individually for each sample, and therefore, the pipeline 'sample_haplotype_reconstruction' should be used.
+
+To run a cross, make sure to modify the configuration file, 'annotations_config.csv', that's stored in the environment. This file allows the pipeline to automatically obtain all relevant information associated with each cross such as the sample URL, input data directory, output data directory, marker annotation file names, etc. 
 The purpose of this configuration file is to avoid having to pass a large list of parameters into each pipeline function.
 
 A preview of the configuration file is shown as below:
@@ -73,6 +83,28 @@ A preview of the configuration file is shown as below:
 config <- fread(paste0(root, '/annotations_config.csv'))
 print(config)
 ```
+
+If the target cross exists in the config file, the pipeline will:
+
+1. get the filename entered in the 'annot_file' column as the annotation file from 'https://raw.githubusercontent.com/kbroman/MUGAarrays/main/UWisc/'
+
+2. get the input data files for all individuals in the cross from the HaploQA url entered in the 'url' column
+
+3. create a folder in the working directory (if not already exists) with the name entered in 'data_dir' column and outputs the scraped input files to this directory
+
+4. create a folder in the working directory (if not already exists) with the name entered in 'qtl2_dir' column to output all the files for qtl2 input
+
+5. get the founder data from the url given in 'founder_url' column
+
+6. run qtl2 with the given value in the 'ngen' column
+
+7. identify the appropriate crosstype to get the optimal model for the given cross using 'truth_model'
+
+8. identify the founders present in the cross. This should be left blank for the mutant crosses or any other crosses where the number of founders ia not consistent between individuals
+
+9. use 'marker_type' to identify the conditions of certain if loops in the pipeline. Should be 'GigaMUGA' or 'MiniMUGA' for the current pipelines
+
+If the cross that the user is running haplotype reconstructions for does not exist in the config file, add a new row and fill each column accordingly.
 
 Below is an example of how the pipeline set-up looks like for CC:
 
@@ -94,114 +126,92 @@ truth_model <- config_sample$truth_model # cross type of truth model for the cro
 data_dir <- file.path(root, config_sample$data_dir)
 # directory to store input data for qtl2
 qtl2_dir <- file.path(root, config_sample$qtl2_dir)
+
+print(config_sample)
 ```
 
-There are three major pipelines in the repository:
-a. 'haplotype_reconstruction_pipeline' - haplotype reconstructions for an entire cross (all individuals within the cross) 
-b. 'sample_haplotype_reconstruction' - haplotype reconstructions for one individual 
-c. 'truth_model_reconstruction' - haplotype reconstructions for optimal/truth models
+From the above set up, the scripts will look for gm_uwisc_v2.csv in https://raw.githubusercontent.com/kbroman/MUGAarrays/main/UWisc/ as the annotation file. The raw input data files will be scraped from http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html and these files will be stored in a folder, 'haploqa_cc_gm', in the same directory as the repo, for further wrangling. The wrangled data that's ready for qtl2 read_cross function will be stored in a folder 'cc_qtl2_genail' also in the same directory as the repo. qtl2 will be use ngen = 4 to run haplotype reconstructions. The optimal model of CC is 'risib8' in qtl2.
 
-Some crosses, such as DO and CC, have the same contributing founders across all individuals. The haplotype reconstructions can therefore be conducted for all individuals in the entire cross at the same time, and the pipeline 'haplotype_reconstruction_pipeline' can be used for crosses with consistent contributing founders for such purpose. Whereas the mutant crosses, such as MiniMUGA, contains individuals with mutate mice where all individuals may have different contributing founder strains. Haplotype reconstructions for these types of crosses need to conducted individually for each sample, and therefore, the pipeline 'sample_haplotype_reconstruction' should be used.
 
 The below results section will demonstrate how the pipelines are used for each cross and the results generated from them.
 
-#### 2.3. Results
+#### 2.2. Results
 
-##### 2.3.1. GigaMUGA
+As mentioned in the introduction, in order to decide whether to transition, the accuracy of haploqa and qtl2 each need to be compared to an optimal model. The pipelines in the sources script perform haplotype reconstruction tasks using genotyping data obtained from different types of data sources, specifically, 5 sets of GigaMUGA samples (Collaborative Cross, Diversity Outbred, F3, F2, and a GigaMUGA mutant cross), 70 individuals within the MiniMUGA sample. Decision was made to not include Muga/MegaMUGA data due to the discontinued usage of the array types.
+
+##### 2.2.1. GigaMUGA
 
 The pipeline for GigaMUGA executes all the individuals within the sample. The contributing founders for all individuals within the GigaMUGA samples are always the same.
 
-1. Results for DO:
+The pipeline to run haplotype reconstructions for an entire cross can be initiated using the function 'haplotype_reconstruction_pipeline'. Please set toggle 'samples_gen' = True if the genotyping data for individuals need to be (re)downloaded from HaploQA, and set to False otherwise. please set toggle 'qtl2_file_gen' = F if the input files for qtl2 read_cross need to be (re)generated, and False otherwise.
 
-```{r message=FALSE}
+The function automatically saves the computed haplotype reconstruction results to an RDS file, which you can find in the /results/RDS/ directory of this repo. Whenever the 'qtl2_file_gen' toggle is set to True to regenerate qtl2 input files for a cross, the according RDS files for that cross need to be manually removed from the /results/RDS/ directory for the haplotype reconstruction results to be properly updated, as the functions that calculate discordance and generate visualizations read the results from these RDS files.
+
+1. Results for DO
+
+```{r, eval=F}
 do_results <- haplotype_reconstruction_pipeline('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
 ```
 
-Below are the genotype visualizations for some individuals: 
+Below are the genotype visualizations for some individuals in DO:
 
-```{r}
-plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_results[['map']], ind = 1, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+a. Sample 6UY
 
+![Karyotype plot - sample 6UY in DO](/Users/linc/Desktop/do_plot_1.png)
 
-```{r}
-plot_onegeno_test(do_results[['ph_geno']], do_results[['ph_geno_haploqa']], do_results[['map']], ind = 50, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
-                          sub = 'Left - qtl2, Right - HaploQA') 
+b. Sample 6WN
 
-# remove DO from memory
-```
+![Karyotype plot - sample 6WN in DO](/Users/linc/Desktop/do_plot_2.png)
 
 2. Results for CC:
 
-```{r message=FALSE}
+```{r, eval=F}
 cc_results <- haplotype_reconstruction_pipeline('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ```
 
-Genotype visualizations for some individuals: 
+a. Sample 35V
 
-```{r}
-plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_results[['map']], ind = 1, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 35V in CC](/Users/linc/Desktop/cc_plot_1.png)
 
+b. Sample 6MV
 
-```{r}
-plot_onegeno_test(cc_results[['ph_geno']], cc_results[['ph_geno_haploqa']], cc_results[['map']], ind = 50, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 6MV in CC](/Users/linc/Desktop/cc_plot_2.png)
 
 3. Results for BXD F3:
 
-```{r}
+```{r, eval=F}
 bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
 
 ```
 
-Genotype visualizations for some individuals: 
+a. Sample 5PD
 
-```{r}
-plot_onegeno_test(bxd_results[['ph_geno']], bxd_results[['ph_geno_haploqa']], bxd_results[['map']], ind = 1, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 5PD in F3](/Users/linc/Desktop/bxd_f3_plot1.png)
 
+b. Sample 5R2
 
-```{r}
-plot_onegeno_test(bxd_results[['ph_geno']], bxd_results[['ph_geno_haploqa']], bxd_results[['map']], ind = 5, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 5R2 in F3](/Users/linc/Desktop/bxd_f3_plot2.png)
 
 4. Results for F2:
 
-```{r}
+```{r, eval=F}
 f2_results <- haplotype_reconstruction_pipeline('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
 ```
 
-Genotype visualizations for some individuals: 
+1. Sample 8RS
 
-```{r}
-plot_onegeno_test(f2_results[['ph_geno']], f2_results[['ph_geno_haploqa']], f2_results[['map']], ind = 1, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 1),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 8RS in F2](/Users/linc/Desktop/f2_plot1.png)
 
+b. Sample 8T3
 
-```{r}
-plot_onegeno_test(f2_results[['ph_geno']], f2_results[['ph_geno_haploqa']], f2_results[['map']], ind = 5, 
-                          shift = TRUE, main = paste0('qtl2 - Geno-wide genotypes of individual ', 50),
-                          sub = 'Left - qtl2, Right - HaploQA') 
-```
+![Karyotype plot - sample 8T3 in F3](/Users/linc/Desktop/f2_plot2.png)
 
 5. GigaMUGA Mutant cross
 
 ```{r}
+gm_res_dir <- file.path(results_dir, 'RDS', 'gm_results.rds')
+gm_pct_dir <- file.path(shiny_pct_fp, 'gm_pct_cpmp.csv')
 # ### GigaMUGA mutant
 gigamuga_url <- 'http://haploqa-dev.jax.org/tag/Jackson_Lab_Mahaffey_MURGIGV01_20160102_FinalReport.html'
 url_domain <- 'http://haploqa-dev.jax.org/'
@@ -213,25 +223,37 @@ summary_df$`% No Call` <- as.numeric(gsub("%", "", summary_df$`% No Call`))
 summary_df <- summary_df[summary_df$`% No Call` < 10,]
 
 ind_gm <- summary_df[summary_df$`Haplotype Candidate` == 'False',]$`ID`
-ind_gm <- ind_gm[!ind_gm %in% c('QU', 'SM', 'SX', 'T5', 'TG', 'TR', 'TS', 'TX', 'UF', 'UR', 'VA', 'VE', 'VG', 'VK', 'VN', 'W4', 'XS', 'Y8', 'Z8', 'ZG')] # screentime error
-ind_gm <- ind_gm[!ind_gm %in% c('RY', 'S8', 'SG', 'SR', 'Y2', 'YA', 'YJ', 'YT')] # only one founder
+ind_gm <- ind_gm[!ind_gm %in% c('RY', 'S8', 'SG', 'SR', 'Y2', 'YA', 'YJ', 'YT', 'XZ', 'Y9')] # only one founder
 
-gigamuga_results <- list()
-gm_pct_res <- list()
+#gigamuga_results <- list()
+#gm_pct_res <- list()
+skipped_inds <- list()
 for (ind in ind_gm) {
   print(ind)
-  sample_gm_res <- sample_haplotype_reconstruction('MURGIGV01', ind, samples_gen = T, qtl2_file_gen = T)
-  df <- ind_geno_comp(sample_gm_res, ind, 'MURGIGV01')
+  skip <- FALSE
+  tryCatch(sample_gm_res <- sample_haplotype_reconstruction('MURGIGV01', ind, samples_gen = T, qtl2_file_gen = T), error = function(e) {skip <<- TRUE})
+  if(skip) {
+     skipped_inds <- c(skipped_inds, ind)
+     next}
+  #df <- ind_geno_comp(sample_gm_res, ind, 'MURGIGV01')
 
-  gm_pct_res[[ind]] <- df
+  #gm_pct_res[[ind]] <- df
   gigamuga_results[[ind]] <- sample_gm_res
 }
+gigamuga_results <- readRDS(gm_res_dir)
+saveRDS(gigamuga_results, gm_res_dir)
+#write.csv(gm_pct_res, file.path(shiny_pct_fp, 'gm_pct_cpmp.csv'), row.names = F)
 ```
 
 
-##### 2.3.2. MiniMUGA
+##### 2.2.2. MiniMUGA
 
 ```{r}
+
+
+#haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = T, samples_gen = T)
+
+
 mini_res_dir <- file.path(results_dir, 'RDS', 'MiniMUGA_results.rds')
 mini_pct_dir <- file.path(shiny_pct_fp, 'mini_pct_comp.csv')
 
@@ -244,9 +266,9 @@ if (!file.exists(mini_res_dir)) {
   url_list <- paste0(url_domain, html_table[grepl('/sample', html_table)])
   summary_df <- sample_summary_scrape(read_html(minimuga_url), url_list, marker_type)
   ind_mini <- summary_df[summary_df$`Haplotype Candidate` == 'False',]$`ID`
-  ind_mini <- ind_mini[ind_mini!='JXX'] # screentime error, skip this one
+  ind_mini <- ind_mini[ind_mini!='JXX', 'JY6'] # screentime error, skip this one
   ind_mini <- ind_mini[ind_mini!='JY9'] # only 1 contributing strain, AIL incompatible, skip this one as well
-  ind_mini <- ind_mini[ind_mini!='JY6'] # temporary - JXU, JY3, JY5
+  
   minimuga_results <- list()
   mini_pct_res <- list()
   for (ind in ind_mini) {
@@ -274,7 +296,7 @@ if (!file.exists(mini_pct_dir)) {
 ```
 
 
-##### 2.3.3. Shiny Visualizations
+##### 2.2.3. Shiny Visualizations
 
 ```{r}
 #source(paste0(root,"/app.R"))
@@ -282,7 +304,7 @@ if (!file.exists(mini_pct_dir)) {
 ```
 
 
-#### 3.Statistical Results
+#### 3. Statistical Results
 
 There are three parts of the comparison:
 1. haploqa results, which can be obtained directly from haploqa.jax.org by downloading the SNP level haplotype reports from each sample. 
@@ -298,7 +320,7 @@ As mentioned in the configuration file, the truth model for CC uses crosstype 'r
 ```{r}
 do_truth_results <- truth_model_reconstruction('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
 cc_truth_results <- truth_model_reconstruction('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
-bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
+bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = T, samples_gen = F)
 f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
 ```
 
@@ -407,7 +429,7 @@ mini_plot <- mini_pct_res %>% group_by(sample_id) %>% summarise(qtl2_pct_diff = 
 plot_df <- melt(mini_plot)
 plot_df$variable <- 'MiniMUGA'
    
-ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('MiniMUGA - percentage of marker difference between genail and haploqa') + xlab('model')
+ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('MiniMUGA haploqa vs qtl2 - percentage of marker discordance') + xlab('model')
 
 ```
 
@@ -479,5 +501,10 @@ R/qtl2:
 
 2. Broman KW, Gatti DM, Simecek P, Furlotte NA, Prins P, Sen Ś, Yandell BS, Churchill GA. R/qtl2: Software for Mapping Quantitative Trait Loci with High-Dimensional Data and Multiparent Populations. Genetics. 2019 Feb;211(2):495-502. doi: 10.1534/genetics.118.301595. Epub 2018 Dec 27. PMID: 30591514; PMCID: PMC6366910.
 
+
+Known issues:
+1. Screen time error
+2. Error in dev.off() : 
+  QuartzBitmap_Output - unable to open file '/Users/linc/.local/share/rstudio/notebooks/AFB3D6E3-draft_report/1/8779F85C5B04ECDA/cvdr4ccbjgppi_t/_rs_chunk_plot_010.png'
 
 

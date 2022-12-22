@@ -4,7 +4,7 @@ library(data.table)
 
 root <- dirname(getSourceEditorContext()$path)
 
-source("input_data_prep_functions.R", local = T)
+source(paste0(root,"/Scripts/utils.R"), local = T)
 #source(paste0(root,"/util.R"))
 
 ## results directory
