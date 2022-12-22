@@ -182,7 +182,6 @@ b. Sample 6MV
 
 ```{r, eval=F}
 bxd_results <- haplotype_reconstruction_pipeline('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
-
 ```
 
 a. Sample 5PD
