@@ -1,8 +1,16 @@
 ## contains all functions to calculate accuracy metrics and/or to compare results 
 ### function directory
-# 1. location_xo_comp - calculates the distances between crossover locations of haploqa and qtl2 results
-# 2. err_comp
-# 3. comp_df_int
+## 1. location_xo_comp - calculates the distances between crossover locations of haploqa and qtl2 results
+## 2. err_comp
+## 3. comp_df_int
+## 4. genocode_comp_matrix
+## 5. get_geno_pct_diff
+## 6. xo_number_plot
+## 7. loc_xo_distance_plot
+## 8. cos_sim_plot
+## 9. geno_all_comp
+## 10. marker_comp_diff
+
 
 library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
@@ -25,8 +33,7 @@ location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
     pos_h_chr <- haploqa_pos[[chr]]
     pos_chr <- qtl2_pos[[chr]]
     nmar_h <- sapply(pos_h_chr, length)
-    nmar <- sapply(pos_chr, length) # none has the same length...
-    #x_loc_diff[[chr]] <- list()
+    nmar <- sapply(pos_chr, length) 
     for (i in seq(1:length(pos_chr))) {
       #i <- 149
       x <- unlist(pos_h_chr[i])
@@ -38,7 +45,7 @@ location_xo_comp <- function(qtl2_pos, haploqa_pos, num_chr) {
         df <- apply(abs(outer(y, x, '-')), 2, min)
       }
       x_loc_diff[[chr]][[i]] <- ifelse(is.na(mean(df)), 0, mean(df))
-    } # make a histogram of some sort, 100 bins
+    } 
   }
   return(x_loc_diff)
 }
@@ -48,7 +55,6 @@ err_comp <- function(pr, map, num_chr, results_dir, sample_type) {
   pdf(paste0(results_dir, 'err_comp_plots_', sample_type, '.pdf'))
   facet_all <- data.frame()
   for (chr in num_chr) {
-    #chr <- 2
     print(chr)
     err <- (1 - apply(pr[[chr]], c(1,3), max)) %>% t() %>% as.data.frame()
     err$marker <- rownames(err)
@@ -59,26 +65,21 @@ err_comp <- function(pr, map, num_chr, results_dir, sample_type) {
     
     for (col in seq(2,(ncol(err_chr)-2))) {
       print(col)
-      #col <- 2
       df <- err_chr[,c(col, ncol(err_chr))]
       df$sample <- colnames(df)[1]
       colnames(df)[1] <- 'value'
       df$chromosome <- chr
-      #plot <- ggplot(df) + aes(x = df[,2], y = df[,1]) + geom_line() + xlab('pos') + ylab(names(df)[1])
-      #print(plot)
       facet_all <- rbind(facet_all, df)
     }
   }
   
   for(sample in unique(facet_all$sample)) {
-    #sample <- '35V'
     sample_df <- facet_all[facet_all$sample == sample,]
     plot <- ggplot(sample_df) + aes(x = pos, y = value) + geom_line() + facet_wrap(sample~chromosome)
     print(plot)
   }
   dev.off()
-  
-  #return(df)
+
 }
 
 
@@ -111,7 +112,6 @@ genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_ta
     ### loop through each matching column within both dataframes
     result_df <- data.frame()
     for (col in seq(1:(ncol(qtl2_comp)-1))) {
-      #print(col)
       df_match <- data.frame('qtl2_ind' = qtl2_comp[,col], 'haploqa_ind' = haploqa_comp[,col])
       t1 <- dcast(df_match, qtl2_ind ~ haploqa_ind, value.var = 'haploqa_ind', fun.aggregate = length)
       result_df <- bind_rows(result_df, t1) %>% group_by(qtl2_ind) %>% summarise(across(everything(), ~ sum(.x, na.rm = TRUE))) %>% as.data.frame()
@@ -133,7 +133,6 @@ genocode_comp_matrix <- function(map, ginf_qtl2, ginf_haploqa, founder_lookup_ta
 
 
 get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr, founder_lookup_table) {
-  
   haploqa_comp <- comp_df_int(ginf_haploqa, founder_lookup_table, map_chr)
   qtl2_comp <- comp_df_int(ginf_qtl2, founder_lookup_table, map_chr)
   
@@ -141,8 +140,6 @@ get_geno_pct_diff <- function(ginf_haploqa, ginf_qtl2, summary_df, num_chr, foun
     chr_pct <- c()
     print(chr)
     for (ind in seq(1:(ncol(qtl2_comp)-1))) {
-      #ind <- 1
-      #ind_index <- ind+1
       ind_qtl2 <- qtl2_comp[,ind]
       ind_haplo <- haploqa_comp[,ind]
       diff <- data.frame('qtl2' = ind_qtl2, 'haploqa' = ind_haplo, 'pos' = qtl2_comp$pos)
@@ -179,15 +176,12 @@ xo_number_plot <- function(sample_result) {
   pos_haploqa_do <- locate_xo(sample_result[['ginf_haploqa']], sample_result[['map']])
   pos_qtl2_do <- sample_result[['pos']]
   
-  
   xo_all <- data.frame()
   for (i in seq(1, length(pos_haploqa_do[[1]]))) { # should be the same for all chromosomes
     print(i)
-    #i <- 1
     xo_haplo <- list()
     xo_qtl2 <- list()
     for (chr in seq(1,19)) {
-      #chr <- 1
       xo_haplo <- c(xo_haplo, length(pos_haploqa_do[[chr]][[i]]))
       xo_qtl2 <- c(xo_haplo, length(pos_qtl2_do[[chr]][[i]]))
     }
@@ -214,21 +208,17 @@ xo_number_plot <- function(sample_result) {
 
 
 loc_xo_distance_plot <- function(sample_result) {
-  #sample_result <- cc_results
   num_chr <- c((1:19),"X")
   sample_type <- toupper(strsplit(deparse(substitute(sample_result)), '_')[[1]][1])
   pos_haploqa_do <- locate_xo(sample_result[['ginf_haploqa']], sample_result[['map']])
   pos_qtl2_do <- sample_result[['pos']]
   x_loc_diff <- location_xo_comp(pos_qtl2_do, pos_haploqa_do, num_chr)
   
-  
   loc_xo_dist_all <- data.frame()
   for (i in seq(1, length(pos_haploqa_do[[1]]))) { # should be the same for all chromosomes
     print(i)
-    #i <- 1
     xo_dist_sample <- list()
     for (chr in seq(1,19)) {
-      #chr <- 1
       xo_dist_sample <- c(xo_dist_sample, x_loc_diff[[chr]][[i]])
     }
     df <- data.frame(sample = names(pos_haploqa_do$`1`)[i], loc_xo_dist = mean(unlist(xo_dist_sample)))
@@ -279,7 +269,6 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
     print('founder prob does not exist, running calculations')
     haplo_test <- list()
     for (i in num_chr) {
-      #i <- 1
       print(i)
       df <- test_geno[[i]]
       
@@ -289,7 +278,6 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
       
       
       for (col in seq(1, ncol(df))) {
-        #col <- 1
         print(col)
         
         df_test <- data.frame(sample_id = rownames(df), col_val = df[,c(col)])
@@ -308,14 +296,11 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
         }
         
         haplo_comp <- (a + b) / 2
-        
         haplo_comp <- haplo_comp[,1:length(unique(c(df_test$allele1, df_test$allele2)))]
-        
         haplo_test[[i]][,,col] <- haplo_comp
         
       }
     }
-    
     saveRDS(haplo_test, haploqa_founderprob_fp)
   } else {
     print('founder prob exists, reading in file')
@@ -327,23 +312,17 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
     print('cos similarity does not exist, running calculations')
     cos_sim_all <- list()
     for (i in seq(1, 19)) {
-      #i <- 1
       df <- test_geno[[i]]
       map_i <- map[[i]]
       print(i)
       cos_sim_chr <- list()
       for (col in seq(1, ncol(df))) {
-        #col <- 3
         map_val <- as.numeric(map_i[col])
         # qtl2
-        #print(col)
         qtl2_comp <- qtl2_test[[i]][,,col]
-        ### plug the pre-calculated square roots
+        ### pre-calculated square roots
         haplo_comp <- haplo_test[[i]][,,col]
-        
-        print(qtl2_comp)
-        print(haplo_comp)
-        
+
         a = rowSums(qtl2_comp * haplo_comp)
         b = (sqrt(rowSums(qtl2_comp * qtl2_comp))) * (sqrt(rowSums(haplo_comp * haplo_comp)))
         
@@ -363,7 +342,6 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
     cos_sim_all <- readRDS(cos_sim_diff_fp)
   }
   df <- cos_sim_all %>% group_by(sample_id) %>% summarise(mean_chr = mean(cos_sim)) %>% as.data.frame()
-  #df$chromosome <- factor(df$chromosome, num_chr)
   ### make into line plot
   ggplot(df) + aes(y = mean_chr, x = seq(1, length(mean_chr))) + geom_line() + xlab('sample_index (1-277)') # take mean of entire genome
   pdf(paste0(results_dir, '/cos_sim_', sample_type, '.pdf'))
@@ -395,10 +373,7 @@ cos_sim_plot <- function(sample_result, rds_dir, results_dir, sample_type) {
 # columns of output: marker, sample_id, chr, position, gene_exp(raw ACGT geno), haplo_diplotype(haploqa output), qtl2_calls(qtl2 output), qtl2_calls_truth(optimal model output)
 geno_all_comp <- function(sample_type, sample_results, truth_results) {
   num_chr <- c((1:19),"X")
-  #sample <- '6UY'
-  #sample_type <- 'F2'
-  #sample_results <- f2_results
-  #truth_results <- f2_truth_results
+
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_codes_dict <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
@@ -439,38 +414,28 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
     ifelse(rev_col %in% founder_codes_dict, rev_col, col)
   })
   
-  
-  #founder_all_lookup <- setNames(names(founder_all_rev_lookup), founder_all_rev_lookup) # limit the lookup table
-  #founder_all_lookup <- founder_all_lookup[names(founder_all_lookup) %in% unique(raw_geno_df$haplotype)]
   founder_all_lookup <- setNames(LETTERS[seq(1, length(unique(raw_geno_df$haplotype)))], seq(1, length(unique(raw_geno_df$haplotype))))
   
   df_geno_all_chr <- list()
   
   for (chr in num_chr) {
-    #chr <- 1
-    
     print(chr)
     ## raw geno
     raw_geno_acgt <- get_raw_geno(sample_type, chromosome = chr)
-    raw_geno_chr_acgt <- raw_geno_acgt #%>% filter(sample_id == sample)
+    raw_geno_chr_acgt <- raw_geno_acgt 
     
     haploqa_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
-    #haploqa_mom$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,1])
-    #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
     haploqa_dad <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
     haploqa_dad[is.na(haploqa_dad)] <- 'Y'
-    #haploqa_dad$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,2])
+
     sample_geno <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
     sample_geno$marker <- colnames(sample_results[['ph_geno_haploqa']][[chr]][,,1])
     sample_geno <- melt(sample_geno, id.vars = c("marker")) %>% rename(sample_id = variable, haplo_diplotype = value)
     
     haploqa_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
-    #haploqa_mom$marker <- colnames(sample_results[['ph_geno']][[chr]][,,1])
-    #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
     haploqa_dad <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
     haploqa_dad[is.na(haploqa_dad)] <- 'Y'
-    #haploqa_dad$marker <- colnames(sample_results[['ph_geno']][[chr]][,,2])
-    #haploqa_dad <- haploqa_dad %>% rename(haploqa_dad = 1)
+
     sample_geno_qtl2 <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
     sample_geno_qtl2$marker <- colnames(sample_results[['ph_geno']][[chr]][,,1])
     sample_geno_qtl2 <- melt(sample_geno_qtl2, id.vars = c("marker")) %>% rename(sample_id = variable, qtl2_calls = value)
@@ -486,18 +451,11 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
           mutate(allele2 = ifelse(Sex == 'male', 'Y', allele2)) %>%
           unite(qtl2_calls_truth, allele1, allele2, sep = '')
         # if male, change to Y
-        
       }
-      
-      #haploqa_df
     } else {
       haploqa_mom <- as.data.frame(apply(as.data.frame(truth_results[['ph_geno']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
-      #haploqa_mom$marker <- colnames(truth_results[['ph_geno_haploqa']][[chr]][,,1])
-      #haploqa_mom <- haploqa_mom %>% rename(haploqa_mom = 1)
       haploqa_dad <- as.data.frame(apply(as.data.frame(truth_results[['ph_geno']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
       haploqa_dad[is.na(haploqa_dad)] <- 'Y'
-      #haploqa_dad$marker <- colnames(truth_results[['ph_geno_haploqa']][[chr]][,,2])
-      #haploqa_dad <- haploqa_dad %>% rename(haploqa_dad = 1)
       sample_geno_truth <- data.frame(Map(paste, haploqa_mom, haploqa_dad, MoreArgs = list(sep = "")), check.names = F)
       sample_geno_truth$marker <- colnames(truth_results[['ph_geno']][[chr]][,,1])
       sample_geno_truth <- melt(sample_geno_truth, id.vars = c("marker")) %>% rename(sample_id = variable, qtl2_calls_truth = value)
@@ -505,8 +463,7 @@ geno_all_comp <- function(sample_type, sample_results, truth_results) {
     }
     
     df_geno_all_acgt <- merge(merge(merge(raw_geno_chr_acgt, sample_geno, by = c('marker', 'sample_id'), sort = F), sample_geno_qtl2, by = c('marker', 'sample_id'), sort = F), sample_geno_truth, by = c('marker', 'sample_id'), sort = F) %>% select(marker, sample_id, chr, pos, everything()) %>% select(-any_of(c('Sex')))
-    #df_geno_all_acgt$is_different <- NA
-    
+
     df_geno_all_acgt[,6:ncol(df_geno_all_acgt)] <- lapply(df_geno_all_acgt[,6:ncol(df_geno_all_acgt)], function(col) {
       rev_col = stri_reverse(col)
       ifelse(rev_col %in% founder_codes_dict, rev_col, col)

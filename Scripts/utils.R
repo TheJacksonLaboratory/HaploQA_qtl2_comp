@@ -1,5 +1,12 @@
 ### Contains all general utility functions used across the board
-
+### function directory
+## 1. get_haplotypes
+## 2. sort_chr - sort chromosomes from 1-19 and X as needed
+## 3. make_cross - adds crosstype attributes to an object to make it a cross (as needed)
+## 4. shiny_viz_input
+## 5. get_raw_geno - 
+## 6. plot_onegeno_test - modified version of plot_onegeno in qtl2, plots two genos instead of one
+## 7. addgenorect - util function that adds rectangles based on geno positions, used in plot_onegeno_test
 
 
 # function to retrieve only the dataframe that all qtl2 input dataframes were based on for testing purposes, and/or the haplotype columns
@@ -20,7 +27,6 @@ get_haplotypes <- function(summary_df, data_dir) {
   sum_df$`% No Call` <- as.numeric(gsub("%", "", sum_df$`% No Call`))
   
   # eliminate those that has no call > 10%
-  ### use checkifnot to make sure the markers/SNP are in the annotation file (annotation file is the boss)
   df_all <- merge(df_raw, sum_df, by = 'sample_id') %>% filter(`% No Call` < 10) %>% filter(!chromosome %in% c('0', 'Y', 'M'))
   
   return(df_all)
@@ -229,7 +235,6 @@ plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
         axis(side=2, at=pretty(ylim), mgp=mgp.y, las=las, tick=FALSE)
       }
       
-      
       # grid lines
       if(!(length(vlines)==1 && is.na(vlines))) {
         abline(v=vlines, col=vlines_col, lwd=vlines_lwd, lty=vlines_lty)
@@ -327,9 +332,6 @@ plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
              x_lower_right, max(map[[i]], na.rm=TRUE),
              col=NULL, border=border, lend=1, ljoin=1)
         inc <- inc + 1.5
-        
-        
-        
       }
       
       ## plot x individually
@@ -343,9 +345,7 @@ plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
       
       inc <- inc + 1
       
-      
       if(is.matrix(g)) {
-        print('x has only one')
         ### dataframe - g
         x_lower_left <- i+0.75+inc
         x_higher_left <- (i+1.25+inc)-(this_chrwidth/2)
@@ -434,19 +434,13 @@ plot_onegeno_test <- function(geno, geno1, map, ind=1, chr=NULL,
         rect(x_higher_right, min(map[['X']], na.rm=TRUE),
              x_lower_right, max(map[['X']], na.rm=TRUE),
              col=NULL, border=border, lend=1, ljoin=1)
-        
       }
-      
-      
-      
-      
       box()
     }
   
   plot_onegeno_internal(geno, map, col=col, na_col=na_col,
                         swap_axes=swap_axes, border=border,
                         chrwidth=chrwidth, ...)
-  
   
 }
 
@@ -509,7 +503,6 @@ geno_align <- function(df, n_founders) {
 }
 
 
-
 # flattens the genoprob object into one data frame
 # data frame should have genoprob value columns with markers and chromosome metadata
 # @param sample_result (object) - should be the output of the pipelines, an object that contains all relevant results
@@ -521,13 +514,11 @@ get_genoprob_example <- function(sample_result, sample_type) {
   
   genoprob_all <- list()
   for (chromosome in num_chr) {
-    #chromosome <- num_chr[1]
     print(chromosome)
     chr_genoprob <- sample_result[['pr']][[chromosome]]
     
     chr_list <- list()
     for(i in dimnames(chr_genoprob)[[3]]) {
-      #i <- dimnames(chr_genoprob)[[3]][1]
       m <- chr_genoprob[,,i] %>% as.data.frame()
       m$marker <- i
       m$sample_name <- rownames(m)
@@ -543,9 +534,6 @@ get_genoprob_example <- function(sample_result, sample_type) {
 
 ind_geno_comp <- function(sample_results, sample_name, sample_type) {
   num_chr <- c((1:19),"X")
-  # sample_name <- 'PX'
-  #  sample_type <- 'MURGIGV01'
-  #  sample_results <- gigamuga_results[['PX']]
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
   founder_codes_dict <- setNames(founder_lookup_table$founder_codes, founder_lookup_table$founder_id)
   
@@ -582,11 +570,8 @@ ind_geno_comp <- function(sample_results, sample_name, sample_type) {
   
   df_geno_all_chr <- list()
   for (chr in num_chr) {
-    #chr <- 'X'
-    
     print(chr)
     ## raw geno
-    
     map_df <- fread(file.path(sample_dir, 'test_gmap.csv')) %>% rename(chromosome = chr)
     annot_file <- config_sample$annot_file
     dir <- "https://raw.githubusercontent.com/kbroman/MUGAarrays/main/UWisc/" # always the same
@@ -594,7 +579,6 @@ ind_geno_comp <- function(sample_results, sample_name, sample_type) {
     
     annot_encode_df <- annot_df %>% select(marker, chr, snp) %>% # select allele columns
       separate(snp, c("allele1", "allele2"), sep=cumsum(c(1)))
-    
     
     ## raw geno codes
     # all txt file from directory
@@ -618,9 +602,6 @@ ind_geno_comp <- function(sample_results, sample_name, sample_type) {
     
     
     ## haploqa
-    #if(sample_name == 'JXU') {
-    # haplo_mini_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,1]), 1, function(x) founder_all_lookup[x])) %>% t()
-    #}
     haplo_mini_mom <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,1]), 1, function(x) founder_all_lookup[x]))
     haplo_mini_dad <- as.data.frame(apply(as.data.frame(sample_results[['ph_geno_haploqa']][[chr]][,,2]), 1, function(x) founder_all_lookup[x]))
     haplo_mini_dad[is.na(haplo_mini_dad)] <- 'Y'

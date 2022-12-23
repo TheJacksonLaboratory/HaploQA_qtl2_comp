@@ -1,13 +1,12 @@
 # contains all functions that aligns haploqa results with that of qtl2 and save the results
 # this is necessary because the computed haploqa results needs to be in the same format as qtl2 (with genoprob, phased geno, etc.)
+
 ### function directory
 ## 1. maxmarg_sim - simulate maxmarg phasing computations for haploqa
-## 2. qtl2_metrics_comp - save all results into rds
-
+## 2. qtl2_metrics_comp - computes qtl2 metrics (i.e. genoprob and phased geno) and save all results into rds
 
 library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
-
 
 source(paste0(root,"/Scripts/utils.R"))
 
@@ -44,33 +43,15 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
     ifelse(rev_col %in% founder_all_rev_lookup, rev_col, col)
   })
   
-  #pr <- cross[['pr']]
-  
-  ### join sex into this df - for males, take first letter, then paste Y after it
-  #founder_all_lookup <- setNames(names(founder_all_rev_lookup), founder_all_rev_lookup) # reverse the lookup table
-  #founder_all_lookup <- founder_all_lookup[names(founder_all_lookup) %in% unique(haploqa_maxmarg$haplotype)]
-  #founder_all_lookup <- setNames(seq(1, length(founder_all_lookup)), names(founder_all_lookup))
-  #haploqa_maxmarg[,4] <- as.data.frame(apply(haploqa_maxmarg[,c(4)], 2, function(x) founder_all_lookup[x]))
-  ### subset the lookup table names to just what is in haploqa_maxmarg$haplotype
-  ### then assign numbers seq(1, length())
-  
-  
   ## save per chromosome
   ginf_haploqa <- list()
   for (i in num_chr) {
-     #i <- '1'
-    
     # founder table
     geno_codes <- colnames(pr[[i]])
-    #founder_all_lookup <- setNames(names(founder_all_rev_lookup), founder_all_rev_lookup)
     founder_all_lookup <- setNames(seq(1, length(geno_codes)), geno_codes)
-    print(founder_all_lookup)
-    
     haploqa_maxmarg_chr <- haploqa_maxmarg %>% filter(chromosome == i)
-    
     haploqa_maxmarg_chr[,4] <- as.data.frame(apply(haploqa_maxmarg_chr[,c(4)], 2, function(x) founder_all_lookup[x]))
     
-    print(i)
     df <- haploqa_maxmarg_chr %>% dcast(sample_id ~ snp_id, value.var = 'haplotype') %>% as.data.frame()
     df[,2:ncol(df)] <- mutate_all(df[,2:ncol(df)], function(x) as.numeric(as.character(x)))
     rownames(df) <- df$sample_id
@@ -78,7 +59,6 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
     df <- df %>% select(-c(sample_id)) 
     col_order <- names(cross$gmap[[i]])
     df <- df[,match(col_order, names(df))]
-    #df <- df[,col_order]
     ginf_haploqa[[i]] <- df 
   }
   
@@ -87,7 +67,7 @@ maxmarg_sim <- function(summary_df, data_dir, num_chr, founder_all_rev_lookup, c
   return(ginf_haploqa)
 }
 
-# function to store results into rds files for future use
+# function to compute phased results and store results into rds files for future use
 # @param rds_dir (string) - directory for which the rds files should be saved in
 # @param qtl2_dir (string) - directory to read the qtl2 input files from
 # @param results_dir (string) - directory to read qtl2 computation results from
@@ -122,7 +102,7 @@ qtl2_metrics_comp <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_
   cross_list[['map']] <- map
   
   # calculations
-  ### save rds files: pr, ginf, ph_geno, pos
+  ### save rds files: pr, ginf, ph_geno, pos, same for haploqa
   # genoprob
   pr_fp <- paste0(rds_dir, "/pr_", sample_type, ".rds")
   print(pr_fp)
@@ -182,10 +162,10 @@ qtl2_metrics_comp <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_
   
   # get summary file
   summary_df <- fread(paste0(data_dir, '/', strsplit(sample_type, '_')[[1]][1], '_summary.csv'))
+  
+  # set up cross
   cross_list[['summary']] <- summary_df
-  
   cross_list[['data_dir']] <- data_dir
-  
   cross_list[['founder_lookup']] <- founder_haplo_lookup
   
   founder_lookup_table <- fread(file.path(root, 'founder_lookup_table.csv'))
@@ -219,7 +199,6 @@ qtl2_metrics_comp <- function(rds_dir, qtl2_dir, sample_type, results_dir, data_
       cross_list[['ph_geno_haploqa']] <- ph_geno_haploqa
     }
   }
-  
   
   return(cross_list)
 }

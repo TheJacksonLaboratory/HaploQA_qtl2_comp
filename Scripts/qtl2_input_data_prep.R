@@ -1,11 +1,19 @@
 ### Contains all functions to generate qtl2 input data
+### function directory
+## 1. qtl2_geno - reformats raw input data into qtl2 required geno file format
+## 2. qtl2_maps - extracts genetic/physical positions from raw input data into qtl2 required map files format
+## 3. qtl2_pheno - simulates the selected phenotypes (in this case, list_pheno) and reformat them into qtl2 required pheno format
+## 4. qtl2_cov - reformats sample metadata into qtl2 required covariate file format
+## 5. qtl2_foundergeno - reformats raw input data of the contributing founders into qtl2 required geno file format
+## 6. qtl2_ci - reformats more sample metadata into qtl2 required format
+## 7. get_qtl2_input - pipeline function that executes all the above functions and concatenate results 
+## 8. get_founder_data - retrieves raw founder data from haploqa if not exists
 
 library(rstudioapi)
 root <- dirname(getSourceEditorContext()$path)
 
 source(paste0(root,"/Scripts/input_data_retrieval.R"))
 source(paste0(root,"/Scripts/utils.R"))
-
 
 # function to generate genotype data for qtl2 input
 # @param df (data.frame) - combined dataframe containing all individual files with only necessary columns selected, merged with summary table and chr 0,Y,M and no calls>10% removed
@@ -289,7 +297,6 @@ get_founder_data <- function(founder_url, url_list, sample_type, data_dir, found
     founders_total <- rbindlist(lapply(founder_data_files, read_sample_txt))
     write.csv(founders_total, fp_founders, row.names = F)
   }
-  
 
   return(founders_total)
   
@@ -326,7 +333,6 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
   ## exclude the ones with bad string names
   if(sample_type == 'CC') {
     summary_df <- summary_df %>% filter(grepl('CC', `Strain Name`)) 
-    
   }
   
   # clean up summary df
@@ -409,7 +415,6 @@ get_qtl2_input <- function(data_dir, sample_type, annot_file, qtl2_output_dir, s
     df_founders_encoded <- qtl2_foundergeno(founders_total, founder_url, url_list, founders_dict, annot_encode_df, founders_list, marker_order, founder_haplo_lookup, sample_type)
     file_output[[6]] <- df_founders_encoded 
   }
-  
   
   print('founder geno data done')
   

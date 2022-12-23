@@ -132,7 +132,6 @@ print(config_sample)
 
 From the above set up, the scripts will look for gm_uwisc_v2.csv in https://raw.githubusercontent.com/kbroman/MUGAarrays/main/UWisc/ as the annotation file. The raw input data files will be scraped from http://haploqa-dev.jax.org/tag/Collaborative%20Cross.html and these files will be stored in a folder, 'haploqa_cc_gm', in the same directory as the repo, for further wrangling. The wrangled data that's ready for qtl2 read_cross function will be stored in a folder 'cc_qtl2_genail' also in the same directory as the repo. qtl2 will be use ngen = 4 to run haplotype reconstructions. The optimal model of CC is 'risib8' in qtl2.
 
-
 The below results section will demonstrate how the pipelines are used for each cross and the results generated from them.
 
 #### 2.2. Results
@@ -145,7 +144,7 @@ The pipeline for GigaMUGA executes all the individuals within the sample. The co
 
 The pipeline to run haplotype reconstructions for an entire cross can be initiated using the function 'haplotype_reconstruction_pipeline'. Please set toggle 'samples_gen' = True if the genotyping data for individuals need to be (re)downloaded from HaploQA, and set to False otherwise. please set toggle 'qtl2_file_gen' = F if the input files for qtl2 read_cross need to be (re)generated, and False otherwise.
 
-The function automatically saves the computed haplotype reconstruction results to an RDS file, which you can find in the /results/RDS/ directory of this repo. Whenever the 'qtl2_file_gen' toggle is set to True to regenerate qtl2 input files for a cross, the according RDS files for that cross need to be manually removed from the /results/RDS/ directory for the haplotype reconstruction results to be properly updated, as the functions that calculate discordance and generate visualizations read the results from these RDS files.
+The function automatically saves the computed haplotype reconstruction results to a number of RDS files, which you can find in the /results/RDS/ directory of this repo. Whenever the 'qtl2_file_gen' toggle is set to True to regenerate qtl2 input files for a cross, the according result RDS files for that cross need to be manually removed from the /results/RDS/ directory for the haplotype reconstruction results to be properly updated, as the functions that calculate discordance metrics and construct visualizations read the results from these RDS files.
 
 1. Results for DO
 
@@ -242,6 +241,12 @@ for (ind in ind_gm) {
 gigamuga_results <- readRDS(gm_res_dir)
 saveRDS(gigamuga_results, gm_res_dir)
 #write.csv(gm_pct_res, file.path(shiny_pct_fp, 'gm_pct_cpmp.csv'), row.names = F)
+
+for (ind in names(gigamuga_results)) {
+  print(ind)
+  df <- ind_geno_comp(gigamuga_results[[ind]], ind, 'MURGIGV01')
+  gm_pct_res[[ind]] <- df
+}
 ```
 
 
@@ -305,6 +310,8 @@ if (!file.exists(mini_pct_dir)) {
 
 #### 3. Statistical Results
 
+To summarize the above results, for GigaMUGA, we selected 277 samples from DO, 218 samples from CC, 71 samples from F3, 34 samples from F2, and 288 mutant samples. For MiniMUGA, we selected 25 samples. Among which, DO and CC are complex crosses with 8 contributing founders, F3 and F2 are relatively simple two-founder crosses, whereas the number of contributing founders in the mutant crosses samples can vary from 2 to 8. This is to ensure there are sufficient evidences to evaluate the accuracy of haplotype reconstruction results for crosses of all computational sizes and complexity.
+
 There are three parts of the comparison:
 1. haploqa results, which can be obtained directly from haploqa.jax.org by downloading the SNP level haplotype reports from each sample. 
 2. qtl2 genAIL results, which was calculated using the R package 'qtl2' with the crosstypes 'genail'
@@ -314,12 +321,12 @@ There are three parts of the comparison:
 
 At a glance of the visualizations which present a high-level idea of the difference between the haplotype reconstruction results between qtl2 and haploqa, there are some visible differences between the two models - specifically, qtl2 appears to have more crossovers and come minor areas appear to have different founder results. To determine which model is more correct, some 'truth' models, which the algorithms have been used (for a long time?), were also constructed for each of the crosses.
 
-As mentioned in the configuration file, the truth model for CC uses crosstype 'risib8', the truth model for DO uses crosstype 'do', the truth model for BXD F3 uses crosstype 'ail', and the truth model for F2 uses crosstype 'f2'. The executions of pipelines for the truth models are as shown below:
+As mentioned in the configuration file, the truth model for CC uses crosstype 'risib8', the truth model for DO uses crosstype 'do', the truth model for BXD F3 uses crosstype 'ail', and the truth model for F2 uses crosstype 'f2'. The executions of pipelines for the truth models can be initiated using the function, 'truth_model_reconstruction'. Same as the previous haplotype reconstruction functions, please set toggle 'samples_gen' = True if the genotyping data for individuals need to be (re)downloaded from HaploQA, and set to False otherwise. please set toggle 'qtl2_file_gen' = F if the input files for qtl2 read_cross need to be (re)generated, and False otherwise. Please also remove the existing result RDS files for the according cross (if any) whenever the qtl2 input files were regenerated to make sure the results are updated properly.
 
-```{r}
+```{r, eval = F}
 do_truth_results <- truth_model_reconstruction('DO', list_pheno, qtl2_file_gen = F, samples_gen = F)
 cc_truth_results <- truth_model_reconstruction('CC', list_pheno, qtl2_file_gen = F, samples_gen = F)
-bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = T, samples_gen = F)
+bxd_truth_results <- truth_model_reconstruction('BXD', list_pheno, qtl2_file_gen = F, samples_gen = F)
 f2_truth_results <- truth_model_reconstruction('F2', list_pheno, qtl2_file_gen = F, samples_gen = F)
 ```
 
