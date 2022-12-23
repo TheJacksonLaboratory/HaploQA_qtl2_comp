@@ -1,15 +1,15 @@
 ## contains all functions to calculate accuracy metrics and/or to compare results 
 ### function directory
 ## 1. location_xo_comp - calculates the distances between crossover locations of haploqa and qtl2 results
-## 2. err_comp
+## 2. err_comp 
 ## 3. comp_df_int
 ## 4. genocode_comp_matrix
 ## 5. get_geno_pct_diff
 ## 6. xo_number_plot
 ## 7. loc_xo_distance_plot
-## 8. cos_sim_plot
-## 9. geno_all_comp
-## 10. marker_comp_diff
+## 8. cos_sim_plot - plots the cosine similarities
+## 9. geno_all_comp - reformats the alleles of haploqa, genail and truth model
+## 10. marker_comp_diff - computes the percentage of marker discordance based on the reformatted alleles of geno_all_comp
 
 
 library(rstudioapi)

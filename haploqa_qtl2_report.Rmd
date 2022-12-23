@@ -255,17 +255,17 @@ if (!file.exists(gm_pct_dir)) {
 } else {
   gm_pct_res <- fread(gm_pct_dir)
 }
-
-
-#write.csv(gm_pct_res, file.path(shiny_pct_fp, 'gm_pct_cpmp.csv'), row.names = F)
-
-for (ind in names(gigamuga_results)[21:100]) {
-  print(ind)
-  df <- ind_geno_comp(gigamuga_results[[ind]], ind, 'MURGIGV01')
-  gm_pct_res[[ind]] <- df
-}
 ```
 
+The selected GigaMUGA mutant cross contains some mice with two contributing founders and some genetically diverse DO mice:
+
+1. Sample ND
+
+![Karyotype plot - sample ND in GigaMUGA Mutant](/Users/linc/Desktop/gm_plot_ND.png)
+
+b. Sample YE
+
+![Karyotype plot - sample YE in GigaMUGA Mutant](/Users/linc/Desktop/gm_plot_YE.png)
 
 ##### 2.2.2. MiniMUGA
 
@@ -315,6 +315,13 @@ if (!file.exists(mini_pct_dir)) {
 
 ```
 
+a. Sample JXN
+
+![Karyotype plot - sample JXN in MiniMUGA](/Users/linc/Desktop/mini_plot_jxn.png)
+
+b. Sample JYA
+
+![Karyotype plot - sample JYA in MiniMUGA](/Users/linc/Desktop/mini_plot_jya.png)
 
 ##### 2.2.3. Shiny Visualizations
 
@@ -372,6 +379,7 @@ mini_pct_res <- fread(file.path(shiny_pct_fp, 'mini_pct_comp.csv'))
 
 
 ```{r}
+# wrangle csv files for plots
 do_qtl2_truth_diff <- do_pct_df$qtl2_pct_diff
 cc_qtl2_truth_diff <- cc_pct_df$qtl2_pct_diff
 bxd_qtl2_truth_diff <- bxd_pct_df$qtl2_pct_diff
@@ -476,6 +484,7 @@ ggplot(plot_df) + geom_boxplot(aes(x = variable, y = value)) + ggtitle('GigaMUGA
 
 ```
 
+The results between genail and haploQA appear to be highly similar, with an average of less than 2% marker discordance between the models. 
 
 #### 4. Conclusion
 Overall, the existing results for qtl2 genail and haploqa show that the two methods have very similar performance for most of the crosses, with genail performing significantly better for the DO outbred mice samples. HaploQA handles the extra founders being present in the haplotype reconstruction process better, however, qtl2 genail model has stronger capabilities to produce more accurate results for complicated crosses. So based on the results we have so far, we’re leaning toward that genail is more accurate than haploqa.
@@ -529,8 +538,12 @@ R/qtl2:
 
 
 Known issues:
-1. Screen time error
+
+1. The webpages throws a screentime error while downloding some individuals from haploQA - this is presumably a Mac issue. The functions automatically skip the samples with screentime error issue, however, this may become an issue when a screentime error rises up while getting the founder data because the function would skip that founder, and the user needs to manually download it. Please make sure that all founders are present before proceeding with the pipelines.
+
 2. Error in dev.off() : 
   QuartzBitmap_Output - unable to open file '/Users/linc/.local/share/rstudio/notebooks/AFB3D6E3-draft_report/1/8779F85C5B04ECDA/cvdr4ccbjgppi_t/_rs_chunk_plot_010.png'
+  
+This is likely an R markdown issue or some unclosed connections in the backend environment after knitting the R markdown - please make sure to clear the workspace or restart R if this happens.
 
 

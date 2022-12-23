@@ -1,10 +1,10 @@
 ### Contains all general utility functions used across the board
 ### function directory
-## 1. get_haplotypes
+## 1. get_haplotypes - retrieve only the dataframe that all qtl2 input dataframes were based on for testing purposes
 ## 2. sort_chr - sort chromosomes from 1-19 and X as needed
 ## 3. make_cross - adds crosstype attributes to an object to make it a cross (as needed)
-## 4. shiny_viz_input
-## 5. get_raw_geno - 
+## 4. shiny_viz_input - gets only the input needed for the Shiny app, primarily used for easy access in app.R
+## 5. get_raw_geno - gets only the raw geno alleles, used for calculations of marker discordance
 ## 6. plot_onegeno_test - modified version of plot_onegeno in qtl2, plots two genos instead of one
 ## 7. addgenorect - util function that adds rectangles based on geno positions, used in plot_onegeno_test
 
